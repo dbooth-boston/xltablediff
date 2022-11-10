@@ -273,45 +273,68 @@ def CellValue(cell):
         sys.stderr.write(f"[WARNING] Ignoring cell at row {cell.row} column {cell.column}: {str(e)}\n")
     return ""
 
+##################### TrimRowsAndColumns #####################
+def TrimRowsAndColumns(rows):
+    ''' Trim trailing empty rows and columns, and pad
+    every row to have the same number of values.
+    Modifies the give rows of values in place.
+    '''
+    iLastRow = -1
+    jLastColumn = -1
+    for i in range(len(rows)):
+        row = rows[i]
+        # Look for the last non-empty cell in the row:
+        jLastThisRow = -1
+        for j in range(len(row)-1, -1, -1):
+            if row[j]:
+                jLastThisRow = j
+                if j > jLastColumn:
+                    jLastColumn = j
+                break
+        if jLastThisRow >= 0:
+            iLastRow = i
+            if jLastThisRow > jLastColumn:
+                jLastColumn = jLastThisRow
+    nRows = iLastRow + 1
+    nColumns = jLastColumn + 1
+    del rows[nRows : ]
+    # Now pad (or trim) each row to the max number of non-empty columns.
+    for i in range(nRows):
+        row = rows[i]
+        if len(row) > nColumns:
+            # Trim a row with extra cells:
+            del row[ nColumns : ]
+        # Pad a row with too few cells:
+        padding = [ "" for j in range(len(row), nColumns) ]
+        row.extend(padding)
+    return rows
+
 ##################### GuessHeaderRow #####################
-def GuessHeaderRow(rows, key, title):
+def GuessHeaderRow(rows, key, title, ignoreLastRow=True):
     ''' Guess the header row, as the first row with the most non-empty
-    cells, provided that it is not the last non-empty row.  If key 
+    cells.  If ignoreLastRow (the default) then the last row is ignored
+    because it should not normally be the header row.  If key 
     was specified, the header row also must contain the key.
-    Return the 0-based index of the header, or None if not found.
+    Returns:
+        iHeader = the 0-based index of the header row, or None if not found.
     '''
     iHeader = None
     maxValues = 0
-    # Go backward in order to not consider the last row as the header row
-    iLast = None
     sys.stderr.write(f"[INFO] Sheet '{title}' n rows: {len(rows)}\n")
-    # r is 0-based index:
-    for r in range(len(rows)-1, -1, -1):
+    # r is 0-based index.
+    # Ignore the last row, because it should not be the header row.
+    nRows = len(rows)
+    if ignoreLastRow:
+        nRows = nRows - 1
+    for r in range(nRows):
         # sys.stderr.write(f"[INFO] Processing sheet '{title}' row: {r+1}\n")
-        cells = rows[r]
-        if not len(cells):
-            sys.stderr.write(f"[INFO] No columns found in sheet '{title}' row: {r+1}\n")
-            # No columns found in this row
+        row = rows[r]
+        if key and key not in row:
             continue
-        cellValues = [ CellValue(cell) for cell in cells if CellValue(cell) != ""]
-        # sys.stderr.write(f"[INFO] Row {r+1} cellValues: {' '.join(cellValues)}\n")
-        n = len(cellValues)
-
-        if not n:
-            # Skip empty row
-            # sys.stderr.write(f"[INFO] Skipping empty row: {r+1}\n")
-            continue
-        if key and key not in cellValues:
-            continue
-        if iLast is None:
-            iLast = r
-            # Skip the last row
-            # sys.stderr.write(f"[INFO] Skipping last row: {r+1}\n")
-            continue
-        if n >= maxValues:
-            maxValues = n
+        nValues = len( [ v for v in row if v ] )
+        if nValues > maxValues:
+            maxValues = nValues
             iHeader = r
-
     return iHeader
 
 ##################### FindTable #####################
@@ -343,7 +366,8 @@ def FindTable(file, sheetTitle, key):
                 sys.stderr.write(f"[INFO] Skipping unwanted sheet: '{s.title}'\n")
                 continue
         # Get the rows of cells:
-        rows = list(s.rows)
+        rows = [ [str(v or "").strip() for v in col] for col in s.values ]
+        TrimRowsAndColumns(rows)
         title = s.title
         # Look for the header row.
         iHeader = GuessHeaderRow(rows, key, s.title)
@@ -372,9 +396,9 @@ def CompareTables(oldRows, iOldHeader, newRows, iNewHeader):
     ###### First compare the lines before the start of the table.
     sys.stderr.write(f"CompareTable\n")
     oldLeadingRows = oldRows[0 : iOldHeader]
-    oldLeadingLines = [ "\t".join( [CellValue(c).replace("\t", " ") for c in r] ) for r in oldLeadingRows ]
+    oldLeadingLines = [ "\t".join( [c.replace("\t", " ") for c in r] ) for r in oldLeadingRows ]
     newLeadingRows = newRows[0 : iNewHeader]
-    newLeadingLines = [ "\t".join( [CellValue(c).replace("\t", " ") for c in r] ) for r in newLeadingRows ]
+    newLeadingLines = [ "\t".join( [c.replace("\t", " ") for c in r] ) for r in newLeadingRows ]
     oldAll = "\n".join(oldLeadingLines)
     sys.stderr.write(f"old all:\n{oldAll}\n")
     newAll = "\n".join(newLeadingLines)
