@@ -3,15 +3,27 @@
 # Copyright 2022 by David Booth
 # License: Apache 2.0
 # Repo: https://github.com/dbooth-boston/xltablediff
-# Note that this code uses simplediff, which is used 
-# under the zlib/libpng license
+# This code also uses simplediff, which is licensed 
+# under the zlib/libpng license:
 # <http://www.opensource.org/licenses/zlib-license.php>
 
-# Compare two spreadsheet tables (old and new), which may have lines before
-# the tables.  We try to be a little intelligent about detecting
-# added or removed columns and rows.  Added or removed columns
-# are detected by differences in the table headers.  Added or
-# removed rows are detected by added or deleted keys.
+# Show value differences between two spreadsheet tables (old and new).
+# The tables may also have lines before
+# and after the tables; the leading and trailing lines are also compared.
+#
+# The old and new tables must both have a key column of
+# the same name, which is specified by the --key option.  The keys
+# must uniquely identify the rows in the table.  Added or deleted rows
+# are detected by comparing the keys in the rows-- not by row order.
+# Similarly, added or deleted columns
+# are detected by comparing the old and new column names, i.e., the headers.  
+#
+# This program only compares cell values -- not formatting or formulas --
+# and trailing empty rows or cells are ignored.  If a cell somehow contains
+# any tabs they may be silently converted to spaces prior to comparison.
+#
+# Test:
+#   ./xltablediff.py --newSheet=Sheet2 --key=ID test1in.xlsx test1in.xlsx --out=test1out.xlsx
 
 def Usage():
     return f'''Usage:
@@ -20,19 +32,19 @@ def Usage():
 Where:
     --key=K     
         Specifies K as the name of the key column that uniquely
-        identifies each row in the table, where K must be one
-        of the fields in the header row and must exist in both
-        oldFile and newFile.  Key defaults to 'id'.
+        identifies each row in the old and new tables.
+        Key defaults to 'id'.
 
     --sheet=S
     --oldSheet=S
     --newSheet=S
         Specifies S as the name of the sheet containing the table
         to be compared.  The sheet will be guessed if it is not specified.
+        "--sheet=S" is shorthand for "--oldSheet=S --newSheet=S".
 
     --out=outFile.xslx
-        Specifies outFile.xlsx as the output file to write.  This "option"
-        is actually required.
+        Specifies outFile.xlsx as the differences output file to write.  
+        This "option" is actually REQUIRED.
 
     --help
         This help.
@@ -277,6 +289,8 @@ def FindTable(file, sheetTitle, key):
         title = title of the sheet in which the table was found.
         rows = rows (values only) of the sheet in which the table was found.
         iHeaders = 0-based index of the header row in rows.
+        iTrailing = 0-based index of rows after the table, which begins
+            with the first row that lacks a key.
     '''
     wb = openpyxl.load_workbook(file, data_only=True) 
     # Potentially look through all sheets for the one to compare.
@@ -314,13 +328,22 @@ def FindTable(file, sheetTitle, key):
             sys.stderr.write(f" in file: '{file}'\n")
             sys.exit(1)
         if key:
-            sys.stderr.write(f"[ERROR] Key not found: {key}\n")
+            sys.stderr.write(f"[ERROR] Key not found: '{key}'\n")
             sys.stderr.write(f" in file: '{file}'\n")
             sys.exit(1)
         sys.stderr.write(f"[ERROR] Unable to find header row\n")
         sys.stderr.write(f" in file: '{file}'\n")
         sys.exit(1)
-    return (title, rows, iHeaders)
+    # Find the key
+    jKey = next( (j for j,v in enumerate(rows[iHeaders]) if v == key), -1 )
+    if jKey < 0:
+        sys.stderr.write(f"[ERROR] Key not found in header row {iHeaders+1}: '{key}'\n")
+        sys.stderr.write(f" in file: '{file}'  sheet: '{sheet.title}\n")
+        sys.exit(1)
+    # Find the end of the table: the first row with an empty key (if any).
+    iTrailing = next( (i for i in range(iHeaders, len(rows)) if not rows[i][jKey]), len(rows) )
+    # sys.stderr.write(f"[INFO] iTrailing: {iTrailing} file: '{file}'\n")
+    return (title, rows, iHeaders, iTrailing)
 
 ##################### RemoveTrailingEmpties #####################
 def RemoveTrailingEmpties(items):
@@ -352,17 +375,16 @@ def MakeDiffRow(diffHeaders, commonHeaders, oldRow, oldHeaderIndex, newRow, newH
     isEqual = next( (False for h in commonHeaders if oldRow[oldHeaderIndex[h]] == newRow[newHeaderIndex[h]]), True )
     return isEqual, oldDiffRow, newDiffRow
 
-##################### CompareLeadingRows #####################
-def CompareLeadingRows(oldRows, iOldHeaders, newRows, iNewHeaders, nDiffHeaders):
-    ''' Compare the old and new leading rows.   Trailing empty cells
+##################### CompareRows #####################
+def CompareRows(diffRows, oldRows, iOldStart, nOldRows, newRows, iNewStart, nNewRows, nDiffHeaders):
+    ''' Compare the old and new leading or trailing rows.   Trailing empty cells
     are ignored.  The first item in each returned diffRow is one of {=, -, +}.
-    Return:
-        diffRows = diffed rows, padded to nDiffHeaders+1
+    Modifies diffRows in place.
     '''
-    # sys.stderr.write(f"CompareLeadingRows\n")
+    # sys.stderr.write(f"CompareRows\n")
     # Concatenate the cells in each row, separated by tabs.
-    oldLeadingLines = [ "\t".join( RemoveTrailingEmpties(oldRows[i]) ) for i in range(0, iOldHeaders) ]
-    newLeadingLines = [ "\t".join( RemoveTrailingEmpties(newRows[i]) ) for i in range(0, iNewHeaders) ]
+    oldLeadingLines = [ "\t".join( RemoveTrailingEmpties(oldRows[i]) ) for i in range(iOldStart, nOldRows) ]
+    newLeadingLines = [ "\t".join( RemoveTrailingEmpties(newRows[i]) ) for i in range(iNewStart, nNewRows) ]
     rawDiffs = simplediff.diff(oldLeadingLines, newLeadingLines)
     # simplediff.diff returns pairs: (d, dList)
     # where:    
@@ -371,14 +393,13 @@ def CompareLeadingRows(oldRows, iOldHeaders, newRows, iNewHeaders, nDiffHeaders)
     # So we need to flatten the dLists, so that we just have pairs: (d, item).
     # flattened = [val for sublist in list_of_lists for val in sublist]
     flatDiffs = [ (d[0], v) for d in rawDiffs for v in d[1] ]
+    # Prepend the diff mark:
     diffLeadingLines = [ d[0] + "\t" + d[1] for d in flatDiffs ]
-    diffRows = []
     for line in diffLeadingLines:
         partialRow = line.split("\t")
         diffRow = [ (partialRow[i] if i < len(partialRow) else '') for i in range(nDiffHeaders+1) ]
         diffRows.append(diffRow)
     # sys.stderr.write(f"diffRows:\n{repr(diffRows)}\n")
-    return diffRows
 
 ##################### CompareHeaders #####################
 def CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex):
@@ -419,17 +440,17 @@ def CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex):
             diffHeaderMarks.append('+')
     return diffHeaderMarks, diffHeaders
 
-##################### CompareTableRows #####################
-def CompareTableRows(diffRows, diffHeaders, key, 
-        oldRows, oldHeaders, iOldHeaders, oldHeaderIndex, 
-        newRows, newHeaders, iNewHeaders, newHeaderIndex):
+##################### CompareBody #####################
+def CompareBody(diffRows, diffHeaders, key, 
+        oldRows, oldHeaders, iOldHeaders, iOldTrailing, oldHeaderIndex, 
+        newRows, newHeaders, iNewHeaders, iNewTrailing, newHeaderIndex):
     ''' Compare rows in the body of the table.  Modifies diffRows
     by appending diffRows for the table body.  The first cell of each diffRow 
     will be one of {=, -, +, c-, c+}.
     '''
     # Make lists of oldKeys and newKeys.
     iOldKey = oldHeaderIndex[key]
-    oldKeys = [ oldRows[i][iOldKey] for i in range(iOldHeaders+1, len(oldRows)) ]
+    oldKeys = [ oldRows[i][iOldKey] for i in range(iOldHeaders+1, iOldTrailing) ]
     # oldKeyIndex will index directly into oldRows, which means that
     # the index is offset by iOldHeaders+1, to get past the leading lines
     # and the header row.
@@ -441,8 +462,9 @@ def CompareTableRows(diffRows, diffHeaders, key,
         if v in oldKeyIndex:
             raise  ValueError(f"[ERROR] Table in oldFile contains a duplicate key on row {r+1}: '{v}'\n")
         oldKeyIndex[v] = r
-    iNewKey = newHeaderIndex[key]
-    newKeys = [ newRows[i][iNewKey] for i in range(iNewHeaders+1, len(newRows)) ]
+    jNewKey = newHeaderIndex[key]
+    sys.stderr.write(f"jNewKey: {jNewKey} iNewHeaders: {iNewHeaders} iNewTrailing: {iNewTrailing}\n")
+    newKeys = [ newRows[i][jNewKey] for i in range(iNewHeaders+1, iNewTrailing) ]
     # newKeyIndex will index directly into newRows, which means that
     # the index is offset by iNewHeaders+1, to get past the leading lines
     # and the header row.
@@ -450,7 +472,7 @@ def CompareTableRows(diffRows, diffHeaders, key,
     for i, v in enumerate(newKeys):
         r = i+iNewHeaders+1 
         if v == '':
-            raise  ValueError(f"[ERROR] Table in newFile contains an empty key at row {r+1}\n")
+            raise  ValueError(f"[INTERNAL ERROR] Table in newFile contains an empty key at row {r+1}\n")
         if v in newKeyIndex:
             raise  ValueError(f"[ERROR] Table in newFile contains a duplicate key on row {r+1}: '{v}'\n")
         newKeyIndex[v] = r
@@ -497,7 +519,7 @@ def CompareTableRows(diffRows, diffHeaders, key,
                 newDiffRow[0] = 'c+'     # Change the marker
                 diffRows.append(newDiffRow)
             # Also add any following deleted old rows.
-            for j in range(oldKeyIndex[k]+1, len(oldRows)):
+            for j in range(oldKeyIndex[k]+1, iOldTrailing):
                 if oldKeys[j - (iOldHeaders+1)] in newKeyIndex:
                     break
                 oldRow = oldRows[j]
@@ -517,10 +539,19 @@ def CompareTableRows(diffRows, diffHeaders, key,
     return diffRows
 
 ##################### CompareTables #####################
-def CompareTables(oldRows, iOldHeaders, newRows, iNewHeaders, key):
-    ''' Compare the old and new tables.  Return a diffs workbook.
+def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key):
+    ''' Compare the old and new tables, and any leading or trailing rows.  
+    Returns:
+        diffRows = Rows of diff cells.  The first cell of each row is
+            a marker with one of: {=, +, -, c-, c+}.
+        iDiffHeaders = Index of the first header row.  There will be two
+            header rows (old and new) if any headers changed.
+        iDiffBody = Index of the table body (either iDiffHeaders+1
+            or iDiffHeaders+2).
+        iDiffTrailing = Index of any trailing rows after the table, if any.
     '''
     ###### Compare the headers, i.e., the column names.
+    # This is done first to figure out how many resulting columns we'll need.
     # The resulting list of headers will be the union of old and new headers,
     # some headers being deleted, some added and some unchanged.
     # The main difficulty is in deciding the best ordering for them,
@@ -535,9 +566,11 @@ def CompareTables(oldRows, iOldHeaders, newRows, iNewHeaders, key):
     diffHeaderMarks, diffHeaders = CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex)
     ###### Compare the lines before the start of the table.
     nDiffHeaders = len(diffHeaders)     # N columns in diffRows table
-    diffRows = CompareLeadingRows(oldRows, iOldHeaders, newRows, iNewHeaders, nDiffHeaders)
+    diffRows = []
+    CompareRows(diffRows, oldRows, 0, iOldHeaders, newRows, 0, iNewHeaders, nDiffHeaders)
     iDiffHeaders = len(diffRows)
     iDiffBody = iDiffHeaders + 2    # 2 for old and new header rows
+    sys.stderr.write(f"iOldTrailing: {iOldTrailing} iNewTrailing: {iNewTrailing}\n")
     ###### Add old and new headers to diffRows.
     if len(diffHeaders) == len(oldHeaders):
         # No columns were added or deleted.
@@ -553,16 +586,19 @@ def CompareTables(oldRows, iOldHeaders, newRows, iNewHeaders, key):
         diffRow = [ 'c+' ]
         diffRow.extend( [ (newHeaders[newHeaderIndex[h]] if h in newHeaderIndex else '') for h in diffHeaders ] )
         diffRows.append(diffRow)
-    ##### Compare the table body rows.
+    ###### Compare the table body rows.
     # Compare rows, excluding columns that were added or deleted.
-    CompareTableRows(diffRows, diffHeaders, key, 
-        oldRows, oldHeaders, iOldHeaders, oldHeaderIndex, 
-        newRows, newHeaders, iNewHeaders, newHeaderIndex)
-    return diffRows, iDiffHeaders, iDiffBody
+    CompareBody(diffRows, diffHeaders, key, 
+        oldRows, oldHeaders, iOldHeaders, iOldTrailing, oldHeaderIndex, 
+        newRows, newHeaders, iNewHeaders, iNewTrailing, newHeaderIndex)
+    iDiffTrailing = len(diffRows)
+    ###### Compare trailing rows (after the table).
+    CompareRows(diffRows, oldRows, iOldTrailing, len(oldRows), newRows, iNewTrailing, len(newRows), nDiffHeaders)
+    return diffRows, iDiffHeaders, iDiffBody, iDiffTrailing
     sys.exit(0)
-    
+
 ##################### WriteDiffFile #####################
-def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, key, outFile):
+def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, outFile):
     ''' Write the diffs to the outFile as XLSX, highlighting
     changed rows/columns/cells.
     '''
@@ -603,8 +639,8 @@ def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, key, outFile):
         if rowMark == '-': rowFill = fillDelRow 
         if rowMark == '+': rowFill = fillAddRow 
         if rowMark == 'c-' or rowMark == 'c+': rowFill = fillChangeRow 
-        if i < iDiffHeaders:
-            # This is a leading row (before the headers).
+        if i < iDiffHeaders or i >= iDiffTrailing:
+            # This is a leading or trailing row.
             # Only use row fills.
             if rowFill:
                 for j in range(nColumns):
@@ -676,30 +712,19 @@ def main():
         sys.exit(1)
     # sys.stderr.write("args: \n" + repr(args) + "\n\n")
     # These will be rows of values-only:
-    (oldTitle, oldRows, oldIHeader) = FindTable(args.oldFile, oldSheetTitle, key)
-    if oldIHeader is None:
+    (oldTitle, oldRows, iOldHeaders, iOldTrailing) = FindTable(args.oldFile, oldSheetTitle, key)
+    if iOldHeaders is None:
         raise ValueError(f"[ERROR] Could not find header row in newFile: '{args.oldFile}'")
-    (newTitle, newRows, newIHeader) = FindTable(args.newFile, newSheetTitle, key)
-    if newIHeader is None:
+    (newTitle, newRows, iNewHeaders, iNewTrailing) = FindTable(args.newFile, newSheetTitle, key)
+    if iNewHeaders is None:
         raise ValueError(f"[ERROR] Could not find header row in newFile: '{args.newFile}'")
-    sys.stderr.write(f"[INFO] Old file: '{args.oldFile}' sheet: '{oldTitle}' row: {oldIHeader+1}\n")
-    sys.stderr.write(f"[INFO] New file: '{args.newFile}' sheet: '{newTitle}' row: {newIHeader+1}\n")
+    sys.stderr.write(f"[INFO] Old table found on rows: {iOldHeaders+1}-{iOldTrailing} file: '{args.oldFile}' sheet: '{oldTitle}'\n")
+    sys.stderr.write(f"[INFO] New table found on rows: {iNewHeaders+1}-{iNewTrailing} file: '{args.newFile}' sheet: '{newTitle}'\n")
 
-    diffRows, iDiffHeaders, iDiffBody = CompareTables(oldRows, oldIHeader, newRows, newIHeader, key)
-    WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, key, outFile)
+    diffRows, iDiffHeaders, iDiffBody, iDiffTrailing = CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key)
+    WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, outFile)
     sys.exit(0)
-        # *** STOPPED HERE ***
 
-    sys.stderr.write(("=" * 72) + "\n")
-    sys.stderr.write(f"File: {args.oldFile}\n")
-    sys.stderr.write(f"Sheet:{s.title}\n")
-
-    try:
-        if not CleanSheet(sheet):
-            sys.stderr.write(f"[INFO] Skipping empty sheet '{sheet.title}'\n")
-    except AttributeError:
-        raise
-    pass
 
 ######################################################
 if __name__ == '__main__':
