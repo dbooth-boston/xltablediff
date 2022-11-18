@@ -20,7 +20,7 @@
 #
 # This program only compares cell values -- not formatting or formulas --
 # and trailing empty rows or cells are ignored.  If a cell somehow contains
-# any tabs they may be silently converted to spaces prior to comparison.
+# any tabs they will be silently converted to spaces prior to comparison.
 #
 # Test:
 #   ./xltablediff.py --newSheet=Sheet2 --key=ID test1in.xlsx test1in.xlsx --out=test1out.xlsx
@@ -108,103 +108,9 @@ import keyword
 import argparse
 import simplediff
 
-###################### TODO #######################
-todoWarned = {}   
-def TODO(msg):
-    """Warn (only once) that a feature is not yet implemented.
-    """
-    if not msg in todoWarned:
-        todoWarned[msg] = True
-        if msg[-1] != "\n":
-            msg += "\n"
-        sys.stderr.write(f"TODO: {msg}")
-
 ################################ Globals ###################################
 # Command line options:
-optionHeader = ""   # Specifies the first column header indicating
-                    # the table start.
 DEFAULT_KEY = "id"    # Header of key column for the table.
-
-keepLeadingSpaces = None
-
-##################### Dumps #####################
-def Dumps(obj): 
-    """Format the given Object as a string.
-    """
-    if isinstance(obj, Object) : 
-        return repr(obj)
-    if isinstance(obj, list) : 
-        return f'[{", ".join([repr(ob) for ob in obj])}]'
-    if isinstance(obj, dict) : 
-        return f'{{ {", ".join([repr(k) + ": " + repr(obj[k]) for k in obj.keys()])} }}'
-    result = ""
-    try:
-        result = json.dumps(obj, indent=2)
-    except TypeError as e:
-        result = f'"({obj.__class__.__name__} OBJECT IS NOT JSON SERIALIZABLE)"'
-    return result
-
-##################### Object #####################
-class Object: 
-    """Generic object for attaching attributes.  IDK if this is the
-    preferred way to do this in python.  Maybe I should be using
-    a named tuple?   But a named tuple is not mutable.
-    https://stackoverflow.com/questions/2970608/what-are-named-tuples-in-python
-    """
-    def __repr__(self):
-        attrs = ",\n  ".join([ f'"{k}": {Dumps(getattr(self, k, "None"))}' 
-            for k in dir(self) if not re.match("__", k) ])
-        return f"{{ {attrs} }}\n"
-
-##################### Unique #####################
-def Unique(theList) :
-    """Return a list of the unique items in theList, retaining order.
-    """
-    seen = set()
-    u = []
-    for item in theList :
-        if item in seen :
-            continue
-        u.append(item)
-        seen.add(item)
-    return u
-
-##################### Trim #####################
-def Trim(s) :
-    """Trim leading and trailing whitespace from the given string.
-    """
-    ss = TrimLeading(TrimTrailing(s))
-    # print(f"Trim: [{s}] -> [{ss}]")
-    return ss
-
-##################### TrimLeading #####################
-def TrimLeading(s) :
-    """Trim leading whitespace from the given string.
-    """
-    ss = re.sub(r'\A[\s\n\r]+', '', s)
-    return ss
-
-##################### TrimTrailing #####################
-def TrimTrailing(s) :
-    """Trim trialing whitespace from the given string.
-    """
-    ss = re.sub(r'[\s\n\r]+\Z', '', s)
-    return ss
-
-################# findall_sub #####################
-# Python3 function to perform string substitution while
-# also returning group matches.  Returns a pair:
-#     (newString, matches) 
-# where newString is the new string, and matches is a list
-# of all matches (potentially an empty list, if no matches).
-def findall_sub(pattern, repl, string, count=0, flags=0):
-        """ Call findall and sub, and return a pair containing
-        both the new string (resulting from the substitution)
-        and a list of group matches.
-        """
-        matches = re.findall(pattern, string, flags)
-        newString = re.sub(pattern, repl, string, count, flags)
-        return (newString, matches)
 
 ##################### NoTabs #####################
 def NoTabs(rows):
@@ -463,7 +369,7 @@ def CompareBody(diffRows, diffHeaders, key,
             raise  ValueError(f"[ERROR] Table in oldFile contains a duplicate key on row {r+1}: '{v}'\n")
         oldKeyIndex[v] = r
     jNewKey = newHeaderIndex[key]
-    sys.stderr.write(f"jNewKey: {jNewKey} iNewHeaders: {iNewHeaders} iNewTrailing: {iNewTrailing}\n")
+    # sys.stderr.write(f"jNewKey: {jNewKey} iNewHeaders: {iNewHeaders} iNewTrailing: {iNewTrailing}\n")
     newKeys = [ newRows[i][jNewKey] for i in range(iNewHeaders+1, iNewTrailing) ]
     # newKeyIndex will index directly into newRows, which means that
     # the index is offset by iNewHeaders+1, to get past the leading lines
@@ -570,7 +476,7 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNew
     CompareRows(diffRows, oldRows, 0, iOldHeaders, newRows, 0, iNewHeaders, nDiffHeaders)
     iDiffHeaders = len(diffRows)
     iDiffBody = iDiffHeaders + 2    # 2 for old and new header rows
-    sys.stderr.write(f"iOldTrailing: {iOldTrailing} iNewTrailing: {iNewTrailing}\n")
+    # sys.stderr.write(f"iOldTrailing: {iOldTrailing} iNewTrailing: {iNewTrailing}\n")
     ###### Add old and new headers to diffRows.
     if len(diffHeaders) == len(oldHeaders):
         # No columns were added or deleted.
@@ -646,7 +552,6 @@ def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, outFile
                 for j in range(nColumns):
                     wsRows[i][j].fill = rowFill
         else:
-                    # **** STOPPED HERE ***
             # This is either a header row or a body row.
             # Apply row fills first, so they'll be overridden
             # by column fills.
@@ -718,8 +623,8 @@ def main():
     (newTitle, newRows, iNewHeaders, iNewTrailing) = FindTable(args.newFile, newSheetTitle, key)
     if iNewHeaders is None:
         raise ValueError(f"[ERROR] Could not find header row in newFile: '{args.newFile}'")
-    sys.stderr.write(f"[INFO] Old table found on rows: {iOldHeaders+1}-{iOldTrailing} file: '{args.oldFile}' sheet: '{oldTitle}'\n")
-    sys.stderr.write(f"[INFO] New table found on rows: {iNewHeaders+1}-{iNewTrailing} file: '{args.newFile}' sheet: '{newTitle}'\n")
+    sys.stderr.write(f"[INFO] Old table rows: {iOldHeaders+1}-{iOldTrailing} file: '{args.oldFile}' sheet: '{oldTitle}'\n")
+    sys.stderr.write(f"[INFO] New table rows: {iNewHeaders+1}-{iNewTrailing} file: '{args.newFile}' sheet: '{newTitle}'\n")
 
     diffRows, iDiffHeaders, iDiffBody, iDiffTrailing = CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key)
     WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, outFile)
