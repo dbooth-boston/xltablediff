@@ -2,39 +2,64 @@
 
 # Copyright 2022 by David Booth
 # License: Apache 2.0
+# Repo: https://github.com/dbooth-boston/xltablediff
 # Note that this code uses simplediff, which is used 
 # under the zlib/libpng license
 # <http://www.opensource.org/licenses/zlib-license.php>
 
-
-# Compare two spreadsheet tables, which may have lines before
+# Compare two spreadsheet tables (old and new), which may have lines before
 # the tables.  We try to be a little intelligent about detecting
 # added or removed columns and rows.  Added or removed columns
 # are detected by differences in the table headers.  Added or
 # removed rows are detected by added or deleted keys.
-#
 
 def Usage():
-    sys.stderr.write(f'''Usage:
+    return f'''Usage:
    xltablediff [ --sheet=MySheet1 ] [ --key=K ] oldFile.xlsx newFile.xlsx --out=outFile.xlsx
 
 Where:
     --key=K     
         Specifies K as the name of the key column that uniquely
         identifies each row in the table, where K must be one
-        of the fields in the header row.  Key defaults to 'id'.
+        of the fields in the header row and must exist in both
+        oldFile and newFile.  Key defaults to 'id'.
 
     --sheet=S
+    --oldSheet=S
+    --newSheet=S
         Specifies S as the name of the sheet containing the table
         to be compared.  The sheet will be guessed if it is not specified.
 
     --out=outFile.xslx
         Specifies outFile.xlsx as the output file to write.  This "option"
-        is mandatory.
-''')
+        is actually required.
 
-# Idea for future enhancement: Allow the table to specified (within
-# the spreadsheet) by specifying a range, such as: --table=B10:G16
+    --help
+        This help.
+
+The oldFile and newFile tables to
+be compared must begin with a header row containing the names of the
+columns.  Headers -- i.e. column names -- must be unique.  They are
+used to determine whether a column was deleted or added.  The order of
+the columns does not affect the comparison of whether a column was
+deleted or added, because each column is uniquely identified by its
+header.
+
+The key column must exist in both the oldFile and newFile headers.
+It is used to uniquely identify each row,
+to determine whether that row was deleted, added or changed.  The order of
+rows in the file does not affect this comparison, because the row is
+identified by its key, not by its position in the file.  
+
+The resulting outFile highlights differences found between the
+oldFile and newFile tables.  The first column in the outFile
+contains a marker indicating whether the row changed:
+    -   Row was deleted
+    +   Row was added
+    =   Row was not changed (excluding columns added or deleted)
+    c-  Row was changed; this row shows the old content
+    c+  Row was changed; this row shows the new content
+'''
 
 # Strategy:
 # 1. Ignore empty trailing rows and columns.
@@ -52,8 +77,12 @@ Where:
 # after the row/column that preceded it in oldFile.  If no
 # row/column preceded it in oldFile, then show it before the row/column
 # that followed it in oldFile.
-# 9. Optionally show unchanged rows and/or columns.
-# 10. Highlight changes in yellow, additions in green, deletions in red.
+# 9. Highlight changes using cell fill colors.
+
+# Ideas for future enhancements: 
+# 1. Allow the table to specified (within
+# the spreadsheet) by specifying a range, such as: --table=B10:G16
+# 2. Optionally suppress unchanged rows and/or columns.
 
 
 import sys
@@ -404,21 +433,27 @@ def CompareTableRows(diffRows, diffHeaders, key,
     # oldKeyIndex will index directly into oldRows, which means that
     # the index is offset by iOldHeaders+1, to get past the leading lines
     # and the header row.
-    oldKeyIndex = { v: i+iOldHeaders+1 for i, v in enumerate(oldKeys) }
-    if '' in oldKeyIndex:
-        raise  ValueError("[ERROR] Table in oldFile contains an empty key\n")
-    if len(oldKeys) != len(oldKeyIndex):
-        raise  ValueError("[ERROR] Table in oldFile contains a duplicate key\n")
+    oldKeyIndex = {}
+    for i, v in enumerate(oldKeys):
+        r = i+iOldHeaders+1 
+        if v == '':
+            raise  ValueError(f"[ERROR] Table in oldFile contains an empty key at row {r+1}\n")
+        if v in oldKeyIndex:
+            raise  ValueError(f"[ERROR] Table in oldFile contains a duplicate key on row {r+1}: '{v}'\n")
+        oldKeyIndex[v] = r
     iNewKey = newHeaderIndex[key]
     newKeys = [ newRows[i][iNewKey] for i in range(iNewHeaders+1, len(newRows)) ]
     # newKeyIndex will index directly into newRows, which means that
     # the index is offset by iNewHeaders+1, to get past the leading lines
     # and the header row.
-    newKeyIndex = { v: i+iNewHeaders+1 for i, v in enumerate(newKeys) }
-    if '' in newKeyIndex:
-        raise  ValueError("[ERROR] Table in newFile contains an empty key\n")
-    if len(newKeys) != len(newKeyIndex):
-        raise  ValueError("[ERROR] Table in newFile contains a duplicate key\n")
+    newKeyIndex = {}
+    for i, v in enumerate(newKeys):
+        r = i+iNewHeaders+1 
+        if v == '':
+            raise  ValueError(f"[ERROR] Table in newFile contains an empty key at row {r+1}\n")
+        if v in newKeyIndex:
+            raise  ValueError(f"[ERROR] Table in newFile contains a duplicate key on row {r+1}: '{v}'\n")
+        newKeyIndex[v] = r
     # Make the diff list of rows.
     # diffRows will not include the header row, but each row in it
     # will have a diff mark {-, +, c-, c+} as its first item.
@@ -512,10 +547,10 @@ def CompareTables(oldRows, iOldHeaders, newRows, iNewHeaders, key):
         diffRows.append(diffRow)
     else:
         # At least one column was added or deleted.
-        diffRow = [ '-' ]
+        diffRow = [ 'c-' ]
         diffRow.extend( [ (oldHeaders[oldHeaderIndex[h]] if h in oldHeaderIndex else '') for h in diffHeaders ] )
         diffRows.append(diffRow)
-        diffRow = [ '+' ]
+        diffRow = [ 'c+' ]
         diffRow.extend( [ (newHeaders[newHeaderIndex[h]] if h in newHeaderIndex else '') for h in diffHeaders ] )
         diffRows.append(diffRow)
     ##### Compare the table body rows.
@@ -532,58 +567,68 @@ def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, key, outFile):
     changed rows/columns/cells.
     '''
     nColumns = len(diffRows[0])     # Includes marker column
+    oldHeaders = diffRows[iDiffHeaders]
+    newHeaders = diffRows[iDiffHeaders]
+    if iDiffBody > iDiffHeaders + 1:
+        # At least one header changed from old to new, so we'll have
+        # two header rows instead of one.
+        newHeaders = diffRows[iDiffHeaders+1]
+    jKey = next( j for j in range(nColumns) if oldHeaders[j] == key )
+    # Create the Excel spreadsheet and fill it with data.
+    outWb = openpyxl.Workbook()
+    outSheet = outWb.active
+    # Fill the sheet with data
+    for diffRow in diffRows:
+        outSheet.append(diffRow)
     # Make a new workbook and copy the table into it.
     fillChangeRow = PatternFill("solid", fgColor="FFFFDD")
     fillDelRow =    PatternFill("solid", fgColor="FFBBBB")
     fillAddRow =    PatternFill("solid", fgColor="BBFFBB")
     fillDelCol =    PatternFill("solid", fgColor="FFDDDD")
     fillAddCol =    PatternFill("solid", fgColor="DDFFDD")
-    fillKeyCol =    PatternFill("solid", fgColor="DDDDFF")
-    fillIgnore =    PatternFill("solid", fgColor="DDDDDD")
-    if iDiffBody > iDiffHeaders + 1:
-        oldHeaders = diffRows[iDiffHeaders]
-        newHeaders = diffRows[iDiffHeaders+1]
-    for j in range(nColumns):
-        if oldHeaders[j] == '':  colFills[j] = fillAddCol
-        if newHeaders[j] == '':  colFills[j] = fillDelCol
-        if oldHeaders[j] == key: colFills[j] = fillKeyCol
+    fillKeyCol =    PatternFill("solid", fgColor="E8E8FF")
+    fillIgnore =    PatternFill("solid", fgColor="E0E0E0")
     # Determine column highlights for added/deleted columns. 
     # colFills will highlight added or deleted columns.
     colFills = [ None for j in range(nColumns) ]
-    outWb = openpyxl.Workbook()
-    outSheet = outWb.active
-    # Fill the sheet with data
-    for diffRow in diffRows:
-        outSheet.append(diffRow)
-    if 1:
-        # Highlight the spreadsheet.
-        wsRows = tuple(outSheet.rows)
-        for i, diffRow in enumerate(diffRows):
-            rowMark = diffRow[0]
-            rowFill = None
-            if rowMark == '-': rowFill = fillDelRow 
-            if rowMark == '+': rowFill = fillAddRow 
-            if rowMark == 'c-' or rowMark == 'c+': rowFill = fillChangeRow 
-            if i < iDiffHeaders:
-                # This is a leading row (before the headers).
-                # Only use row fills.
-                if rowFill:
-                    for j in range(nColumns):
-                        wsRows[i][j].fill = rowFill
-            else:
-                        # **** STOPPED HERE ***
-                # This is either a header row or a body row.
-                # Apply row fills first, so they'll be overridden
-                # by column fills.
+    for j in range(nColumns):
+        if oldHeaders[j] == '':  colFills[j] = fillAddCol
+        if newHeaders[j] == '':  colFills[j] = fillDelCol
+
+    # Highlight the spreadsheet.
+    wsRows = tuple(outSheet.rows)
+    for i, diffRow in enumerate(diffRows):
+        rowMark = diffRow[0]
+        rowFill = None
+        if rowMark == '-': rowFill = fillDelRow 
+        if rowMark == '+': rowFill = fillAddRow 
+        if rowMark == 'c-' or rowMark == 'c+': rowFill = fillChangeRow 
+        if i < iDiffHeaders:
+            # This is a leading row (before the headers).
+            # Only use row fills.
+            if rowFill:
                 for j in range(nColumns):
-                    if rowMark and rowFill:
-                        wsRows[i][j].fill = rowFill
-                    if j>0 and colFills[j]:
-                        wsRows[i][j].fill = colFills[j]
-                    if j>0 and rowMark == 'c+' and (not colFills[j]) and diffRow[j] != diffRows[i-1][j]:
-                        # Highlight this cell and the one above it
-                        wsRows[i-1][j].fill = fillDelRow
-                        wsRows[i][j].fill =   fillAddRow
+                    wsRows[i][j].fill = rowFill
+        else:
+                    # **** STOPPED HERE ***
+            # This is either a header row or a body row.
+            # Apply row fills first, so they'll be overridden
+            # by column fills.
+            for j in range(nColumns):
+                if oldHeaders[j] == key: 
+                    wsRows[i][j].fill = fillKeyCol
+                if rowMark and rowFill:
+                    wsRows[i][j].fill = rowFill
+                if i < iDiffBody:
+                    # A header row
+                    wsRows[i][j].fill = fillKeyCol
+                if colFills[j]:
+                    wsRows[i][j].fill = colFills[j]
+                if j>0 and rowMark == 'c+' and (not colFills[j]) and diffRow[j] != diffRows[i-1][j]:
+                    # Highlight this cell and the one above it, if non-empty
+                    if diffRows[i-1][j]: wsRows[i-1][j].fill = fillDelRow
+                    if diffRows[i][j]:   wsRows[i][j].fill =   fillAddRow
+
     outSheet.title = 'Differences'
     outWb.save(outFile)
     sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
@@ -603,14 +648,14 @@ def main():
     argParser.add_argument('--key',
                     help='Specifies the name of the key column, i.e., its header')
     argParser.add_argument('--out',
-                    help='Output file of differences')
+                    help='Output file of differences', required=True)
     argParser.add_argument('oldFile', metavar='oldFile.xlsx', type=str,
                     help='Old spreadsheet (*.xlsx)')
     argParser.add_argument('newFile', metavar='newFile.xlsx', type=str,
                     help='New spreadsheet (*.xlsx)')
     # sys.stderr.write(f"[INFO] calling print_using....\n")
     global args
-    (args, otherArgs) = argParser.parse_known_args()
+    args = argParser.parse_args()
     if args.sheet and args.oldSheet:
         raise ValueError(f"[ERROR] Illegal combination of options: --sheet with --oldSheet")
     if args.sheet and args.newSheet:
@@ -627,9 +672,9 @@ def main():
     outFile = args.out
     if not outFile:
         sys.stderr.write("[ERROR] Output filename must be specified: --out=outFile.xlsx\n")
+        sys.stderr.write(Usage())
         sys.exit(1)
-    sys.stderr.write("args: \n" + repr(args) + "\n\n")
-    sys.stderr.write("otherArgs: \n" + repr(otherArgs) + "\n\n")
+    # sys.stderr.write("args: \n" + repr(args) + "\n\n")
     # These will be rows of values-only:
     (oldTitle, oldRows, oldIHeader) = FindTable(args.oldFile, oldSheetTitle, key)
     if oldIHeader is None:
