@@ -217,9 +217,8 @@ def FindTable(file, sheetTitle, key):
                 # sys.stderr.write(f"[INFO] Skipping unwanted sheet: '{s.title}'\n")
                 continue
         # Get the rows of cells:
-        # rows = [ [str(v or "").strip() for v in col] for col in s.values ]
-        rows = [ [str(c.value or "").strip() for c in row] for row in s.rows ]
-        sys.stderr.write(f"[INFO] file: '{file}' rows: \n{repr(rows)} \n")
+        rows = [ [str(v if v is not None else "").strip() for v in col] for col in s.values ]
+        # sys.stderr.write(f"[INFO] file: '{file}' c.value rows: \n{repr(rows)} \n")
         TrimAndPad(rows)
         NoTabs(rows)
         title = s.title
