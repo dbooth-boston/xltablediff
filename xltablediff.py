@@ -109,7 +109,6 @@ import argparse
 import simplediff
 
 ################################ Globals ###################################
-# Command line options:
 DEFAULT_KEY = "id"    # Header of key column for the table.
 
 ##################### NoTabs #####################
@@ -218,7 +217,9 @@ def FindTable(file, sheetTitle, key):
                 # sys.stderr.write(f"[INFO] Skipping unwanted sheet: '{s.title}'\n")
                 continue
         # Get the rows of cells:
-        rows = [ [str(v or "").strip() for v in col] for col in s.values ]
+        # rows = [ [str(v or "").strip() for v in col] for col in s.values ]
+        rows = [ [str(c.value or "").strip() for c in row] for row in s.rows ]
+        sys.stderr.write(f"[INFO] file: '{file}' rows: \n{repr(rows)} \n")
         TrimAndPad(rows)
         NoTabs(rows)
         title = s.title
@@ -249,6 +250,7 @@ def FindTable(file, sheetTitle, key):
     # Find the end of the table: the first row with an empty key (if any).
     iTrailing = next( (i for i in range(iHeaders, len(rows)) if not rows[i][jKey]), len(rows) )
     # sys.stderr.write(f"[INFO] iTrailing: {iTrailing} file: '{file}'\n")
+    # sys.stderr.write(f"[INFO] file: '{file}' rows: \n{repr(rows)} \n")
     return (title, rows, iHeaders, iTrailing)
 
 ##################### RemoveTrailingEmpties #####################
@@ -258,28 +260,6 @@ def RemoveTrailingEmpties(items):
     '''
     nItems = next( (i+1 for i in range(len(items)-1, -1, -1) if items[i]), 0 )
     return items[0 : nItems]
-
-##################### MakeDiffRow #####################
-# isEqual, oldDiffRow, newDiffRow = 
-def MakeDiffRow(diffHeaders, commonHeaders, oldRow, oldHeaderIndex, newRow, newHeaderIndex):
-    ''' Create an old and new diffRow having the columns of diffHeaders.
-    Parameters:
-        diffHeaders = List of both old and new headers
-        commonHeaders = set of headers common to both old and new
-        oldRow = Old row of values to be compared
-        oldHeaderIndex = Dict from old header to its index in oldRow
-        newRow = New row of values to be compared
-        newHeaderIndex = Dict from new header to its index in newRow
-    Returns:
-        isEqual = True iff all old and new values in commonHeaders columns 
-                are equal.  Other columns are ignored.
-        oldDiffRow = the old diffRow that was created
-        newDiffRow = the new diffRow that was created
-    '''
-    oldDiffRow = [ (oldRow[oldHeaderIndex[h]] if h in oldHeaderIndex else '') for h in diffHeaders ]
-    newDiffRow = [ (newRow[newHeaderIndex[h]] if h in newHeaderIndex else '') for h in diffHeaders ]
-    isEqual = next( (False for h in commonHeaders if oldRow[oldHeaderIndex[h]] == newRow[newHeaderIndex[h]]), True )
-    return isEqual, oldDiffRow, newDiffRow
 
 ##################### CompareRows #####################
 def CompareRows(diffRows, oldRows, iOldStart, nOldRows, newRows, iNewStart, nNewRows, nDiffHeaders):
@@ -408,8 +388,13 @@ def CompareBody(diffRows, diffHeaders, key,
         newDiffRowValues = [ (newRow[newHeaderIndex[h]] if h in newHeaderIndex else '') for h in diffHeaders ]
         newDiffRow.extend(newDiffRowValues)
         if k in oldKeyIndex:
-            # Key k is in both oldRows and newRows.  Did the rows change?
+            # Key k is in both oldRows and newRows.  
             oldRow = oldRows[oldKeyIndex[k]]
+            # Include old values:
+            for j, h in enumerate(diffHeaders):
+                if h in oldHeaderIndex and h not in newHeaderIndex:
+                    newDiffRow[j+1] = oldRow[oldHeaderIndex[h]]
+            # Did the rows change (excluding added/deleted columns)?
             isEqual = next( (False for h in commonHeaders if oldRow[oldHeaderIndex[h]] != newRow[newHeaderIndex[h]]), True )
             if isEqual:
                 # No values changed in columns that are in common in this row.
@@ -419,8 +404,11 @@ def CompareBody(diffRows, diffHeaders, key,
             else:
                 # Values changed from oldRow to newRow.  
                 oldDiffRow = [ 'c-' ]
-                oldDiffRowValues = [ (oldRow[oldHeaderIndex[h]] if h in oldHeaderIndex else '') for h in diffHeaders ]
-                oldDiffRow.extend(oldDiffRowValues)
+                for h in diffHeaders:
+                    v = ''
+                    if h in newHeaderIndex: v = newRow[newHeaderIndex[h]]
+                    if h in oldHeaderIndex: v = oldRow[oldHeaderIndex[h]]
+                    oldDiffRow.append(v)
                 diffRows.append(oldDiffRow)
                 newDiffRow[0] = 'c+'     # Change the marker
                 diffRows.append(newDiffRow)
@@ -524,10 +512,10 @@ def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, outFile
         outSheet.append(diffRow)
     # Make a new workbook and copy the table into it.
     fillChangeRow = PatternFill("solid", fgColor="FFFFDD")
-    fillDelRow =    PatternFill("solid", fgColor="FFBBBB")
-    fillAddRow =    PatternFill("solid", fgColor="BBFFBB")
-    fillDelCol =    PatternFill("solid", fgColor="FFDDDD")
-    fillAddCol =    PatternFill("solid", fgColor="DDFFDD")
+    fillDelRow =    PatternFill("solid", fgColor="FFB6C1")
+    fillAddRow =    PatternFill("solid", fgColor="B6FFC1")
+    fillDelCol =    PatternFill("solid", fgColor="FFDDE2")
+    fillAddCol =    PatternFill("solid", fgColor="DDFFE2")
     fillKeyCol =    PatternFill("solid", fgColor="E8E8FF")
     fillIgnore =    PatternFill("solid", fgColor="E0E0E0")
     # Determine column highlights for added/deleted columns. 
@@ -595,7 +583,6 @@ def main():
     argParser.add_argument('newFile', metavar='newFile.xlsx', type=str,
                     help='New spreadsheet (*.xlsx)')
     # sys.stderr.write(f"[INFO] calling print_using....\n")
-    global args
     args = argParser.parse_args()
     if args.sheet and args.oldSheet:
         raise ValueError(f"[ERROR] Illegal combination of options: --sheet with --oldSheet")
@@ -607,6 +594,7 @@ def main():
         oldSheetTitle = args.oldSheet
     if args.newSheet:
         newSheetTitle = args.newSheet
+    global DEFAULT_KEY
     key = DEFAULT_KEY
     if args.key:
         key = args.key
