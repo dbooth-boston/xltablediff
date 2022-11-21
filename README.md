@@ -1,6 +1,6 @@
 # xltablediff
 
-Show value differences between two spreadsheet tables (old and new).
+Show value differences between two Excel (.xlsx) spreadsheet tables (old and new).
 Each table may also have lines before
 and after the table; the leading and trailing lines are also compared.
 
