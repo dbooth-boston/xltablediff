@@ -25,3 +25,8 @@ The table's header row and key column are otherwise highlighted in gray-blue.
 
 Limitations:
 1. Only one table in one sheet is compared with one table in one other sheet.
+
+Test:
+```
+./xltablediff.py --newSheet=Sheet2 --key=ID test1in.xlsx test1in.xlsx --out=test1out.xlsx
+```
