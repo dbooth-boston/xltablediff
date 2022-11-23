@@ -308,9 +308,13 @@ def CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex):
     '''
     # Headers are treated as column keys: they must be unique.
     if '' in oldHeaders:
-        raise ValueError(f"[ERROR] Old header row {iOldHeaders+1} contains an empty header\n")
+        iEmpty = next( (i for i in range(len(oldHeaders)) if oldHeaders[i] == ''), -1 )
+        letter = openpyxl.utils.cell.get_column_letter(iEmpty+1)
+        raise ValueError(f"[ERROR] Empty header in column {letter} of old table\n")
     if '' in newHeaders:
-        raise ValueError(f"[ERROR] New header row {iNewHeaders+1} contains an empty header\n")
+        iEmpty = next( (i for i in range(len(newHeaders)) if newHeaders[i] == ''), -1 )
+        letter = openpyxl.utils.cell.get_column_letter(iEmpty+1)
+        raise ValueError(f"[ERROR] Empty header in column {letter} of new table\n")
     # Build up the diffHeaders from the newHeaders plus any deleted oldHeaders
     diffHeaders = []
     diffHeaderMarks = []    # {=, -, +}
