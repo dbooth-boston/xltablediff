@@ -1,3 +1,10 @@
+# This code makes use of simplediff, https://github.com/paulgb/simplediff/
+# which is licensed under the zlib/libpng license:
+# <http://www.opensource.org/licenses/zlib-license.php>
+# The rest of the code is licensed under the Apache 2.0 license,
+# included below.
+
+
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
