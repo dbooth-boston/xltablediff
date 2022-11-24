@@ -120,9 +120,6 @@ import keyword
 import argparse
 import simplediff
 
-################################ Globals ###################################
-DEFAULT_KEY = "id"    # Header of key column for the table.
-
 ##################### NoTabs #####################
 def NoTabs(rows):
     ''' Change tabs to spaces in all cells.
@@ -177,6 +174,7 @@ def GuessHeaderRow(rows, key, title):
     If key was specified, the header row also must contain the key.
     Returns:
         iHeaders = the 0-based index of the header row, or None if not found.
+        possibleKeys = list of headers with unique non-empty column values
     '''
     iHeaders = None
     maxValues = 0
@@ -196,7 +194,22 @@ def GuessHeaderRow(rows, key, title):
         if nValues > maxValues:
             maxValues = nValues
             iHeaders = r
-    return iHeaders
+    possibleKeys = []
+    if iHeaders is not None:
+        headers = rows[iHeaders]
+        # sys.stderr.write(f"headers: {repr(headers)}\n")
+        for j in range(len(headers)):
+            colValues = set()
+            dupeFound = None
+            for i in range(iHeaders+1, len(rows)):
+                v = rows[i][j]
+                if v in colValues:
+                    dupeFound = True
+                    break
+                colValues.add(v)
+            if not dupeFound: possibleKeys.append(headers[j])
+    # sys.stderr.write(f"possibleKeys: {repr(possibleKeys)}\n")
+    return iHeaders, possibleKeys
 
 ##################### FindTable #####################
 def FindTable(file, sheetTitle, key):
@@ -208,6 +221,8 @@ def FindTable(file, sheetTitle, key):
         iHeaders = 0-based index of the header row in rows.
         iTrailing = 0-based index of rows after the table, which begins
             with the first row that lacks a key.
+        key = Key used: either the one that was passed in or the first
+            possibleKey if no key was specified.
     '''
     wb = openpyxl.load_workbook(file, data_only=True) 
     # Potentially look through all sheets for the one to compare.
@@ -217,10 +232,8 @@ def FindTable(file, sheetTitle, key):
     iHeaders = None
     rows = None
     title = ""
+    allPossibleKeys = set()
     for s in wb:
-        if sheet:
-            # Already found the right sheet.  No need to look at others.
-            break
         if sheetTitle:
             if sheetTitle == s.title.strip(): 
                 sheet = s
@@ -233,12 +246,21 @@ def FindTable(file, sheetTitle, key):
         # sys.stderr.write(f"[INFO] file: '{file}' c.value rows: \n{repr(rows)} \n")
         TrimAndPad(rows)
         NoTabs(rows)
-        title = s.title
+        title = s.title.strip()
         # Look for the header row.
-        iHeaders = GuessHeaderRow(rows, key, s.title)
-        if iHeaders is not None:
+        iHeaders, possibleKeys = GuessHeaderRow(rows, key, title)
+        allPossibleKeys.update(possibleKeys)
+        if iHeaders is None:
+            # Not found.  Maybe the key is wrong.
+            if key:
+                # Try again without specifying the key
+                iOther, otherPossibleKeys = GuessHeaderRow(rows, None, title)
+                allPossibleKeys.update(otherPossibleKeys)
+        else:
+            # Found a header row.
             sheet = s
             # sys.stderr.write(f"[INFO] In sheet '{s.title}' found table headers at row {iHeaders+1}\n")
+        if sheet:
             break
     if not sheet:
         if sheetTitle:
@@ -248,21 +270,28 @@ def FindTable(file, sheetTitle, key):
         if key:
             sys.stderr.write(f"[ERROR] Key not found: '{key}'\n")
             sys.stderr.write(f" in file: '{file}'\n")
+            pKeys = " ".join(sorted(map((lambda v: f"'{v}'"), allPossibleKeys)))
+            if allPossibleKeys:
+                sys.stderr.write(f" Potential keys: {pKeys}\n")
             sys.exit(1)
         sys.stderr.write(f"[ERROR] Unable to find header row\n")
         sys.stderr.write(f" in file: '{file}'\n")
         sys.exit(1)
     # Find the key
-    jKey = next( (j for j,v in enumerate(rows[iHeaders]) if v == key), -1 )
+    if key: allPossibleKeys = set([key])
+    jKey = next( (j for j,v in enumerate(rows[iHeaders]) if v in allPossibleKeys), -1 )
     if jKey < 0:
         sys.stderr.write(f"[ERROR] Key not found in header row {iHeaders+1}: '{key}'\n")
         sys.stderr.write(f" in file: '{file}'  sheet: '{sheet.title}\n")
         sys.exit(1)
+    if not key:
+        key = rows[iHeaders][jKey]
+        sys.stderr.write(f"[INFO] Assuming key: '{key}'\n")
     # Find the end of the table: the first row with an empty key (if any).
     iTrailing = next( (i for i in range(iHeaders, len(rows)) if not rows[i][jKey]), len(rows) )
     # sys.stderr.write(f"[INFO] iTrailing: {iTrailing} file: '{file}'\n")
     # sys.stderr.write(f"[INFO] file: '{file}' rows: \n{repr(rows)} \n")
-    return (title, rows, iHeaders, iTrailing)
+    return (title, rows, iHeaders, iTrailing, key)
 
 ##################### RemoveTrailingEmpties #####################
 def RemoveTrailingEmpties(items):
@@ -609,8 +638,7 @@ def main():
         oldSheetTitle = args.oldSheet
     if args.newSheet:
         newSheetTitle = args.newSheet
-    global DEFAULT_KEY
-    key = DEFAULT_KEY
+    key = None
     if args.key:
         key = args.key
     outFile = args.out
@@ -620,10 +648,10 @@ def main():
         sys.exit(1)
     # sys.stderr.write("args: \n" + repr(args) + "\n\n")
     # These will be rows of values-only:
-    (oldTitle, oldRows, iOldHeaders, iOldTrailing) = FindTable(args.oldFile, oldSheetTitle, key)
+    (oldTitle, oldRows, iOldHeaders, iOldTrailing, key) = FindTable(args.oldFile, oldSheetTitle, key)
     if iOldHeaders is None:
         raise ValueError(f"[ERROR] Could not find header row in newFile: '{args.oldFile}'")
-    (newTitle, newRows, iNewHeaders, iNewTrailing) = FindTable(args.newFile, newSheetTitle, key)
+    (newTitle, newRows, iNewHeaders, iNewTrailing, key) = FindTable(args.newFile, newSheetTitle, key)
     if iNewHeaders is None:
         raise ValueError(f"[ERROR] Could not find header row in newFile: '{args.newFile}'")
     sys.stderr.write(f"[INFO] Old table rows: {iOldHeaders+1}-{iOldTrailing} file: '{args.oldFile}' sheet: '{oldTitle}'\n")
