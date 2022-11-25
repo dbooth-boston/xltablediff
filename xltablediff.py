@@ -8,8 +8,9 @@
 # <http://www.opensource.org/licenses/zlib-license.php>
 
 # Show value differences between two spreadsheet tables (old and new).
-# The tables may also have lines before
-# and after the tables; the leading and trailing lines are also compared.
+# The tables may also have unrelated leading and/or trailing rows before
+# and after the tables.   The leading and trailing rows are also compared,
+# though they are compared as lines.
 #
 # The old and new tables must both have a key column of
 # the same name, which is specified by the --key option.  The keys
@@ -29,6 +30,9 @@
 # the first of the resulting two rows will show the old values;
 # the second row will show the new values.
 # The table's header row and key column are otherwise highlighted in gray-blue.
+#
+# Optionally columns of the new table may be appended to old table,
+# or merged into the old table.  Use './xltablediff.py --help' for options.
 #
 # Limitations:
 #  1. Only one table in one sheet is compared with one table in one other 
@@ -532,7 +536,116 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNew
     ###### Compare trailing rows (after the table).
     CompareRows(diffRows, oldRows, iOldTrailing, len(oldRows), newRows, iNewTrailing, len(newRows), nDiffHeaders)
     return diffRows, iDiffHeaders, iDiffBody, iDiffTrailing
-    sys.exit(0)
+
+##################### AppendTable #####################
+def AppendTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile):
+    ''' Append columns of old table to new table.
+    Write the resulting spreadsheet to outFile.
+    '''
+    # Copy oldRows from the beginning through the headers. 
+    oldHeaders = oldRows[iOldHeaders]
+    newHeaders = newRows[iNewHeaders]
+    outRows = []
+    emptyNewRow = [ '' for j in range(len(newHeaders)) ]
+    for i in range(iOldHeaders):
+        outRow = oldRows[i].copy()
+        outRow.extend(emptyNewRow)
+        outRows.append(outRow)
+    # Find the key column in oldHeaders
+    jOldKey = next( j for j in range(len(oldHeaders)) if oldHeaders[j] == key )
+    # Find the key column in newHeaders
+    jNewKey = next( j for j in range(len(newHeaders)) if newHeaders[j] == key )
+    # Make a newKeyIndex
+    newKeyIndex = { newRows[i][jNewKey]: i for i in range(iNewHeaders+1, len(newRows)) }
+    # Copy oldRows, appending newRows that exist
+    for i in range(iOldHeaders, iOldTrailing):
+        outRow = oldRows[i].copy()
+        newRow = emptyNewRow
+        k = outRow[jOldKey]
+        if i == iOldHeaders:
+            newRow = newHeaders
+        elif k in newKeyIndex:
+            newRow = newRows[newKeyIndex[k]]
+        outRow.extend(newRow)
+        outRows.append(outRow)
+    # Copy trailing oldRows
+    for i in range(iOldTrailing, len(oldRows)):
+        outRow = oldRows[i].copy()
+        outRow.extend(emptyNewRow)
+        outRows.append(outRow)
+    # Create the output spreadsheet and fill it with data.
+    outWb = openpyxl.Workbook()
+    outSheet = outWb.active
+    for outRow in outRows:
+        outSheet.append(outRow)
+    # Highlight the new columns.
+    fillAddCol =    PatternFill("solid", fgColor="DDFFE2")
+    wsRows = tuple(outSheet.rows)
+    nOldColumns = len(oldHeaders)
+    # Determine how many columns are needed.
+    nTotalColumns = len(oldHeaders) + len(newHeaders)
+    for i in range(iOldHeaders, iOldTrailing):
+        outRow = outRows[i]
+        for j in range(nOldColumns, nTotalColumns):
+            wsRows[i][j].fill = fillAddCol
+    # Write the output file
+    outSheet.title = 'Appended'
+    outWb.save(outFile)
+    sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
+
+##################### MergeTable #####################
+def MergeTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile, mergeHeaders):
+    ''' Merge specified columns of old table to new table.
+    Write the resulting spreadsheet to outFile.
+    '''
+    oldHeaders = oldRows[iOldHeaders]
+    newHeaders = newRows[iNewHeaders]
+    # Create the output spreadsheet and fill it with old data.
+    outWb = openpyxl.Workbook()
+    outSheet = outWb.active
+    for oldRow in oldRows:
+        outSheet.append(oldRow)
+    # Prepare to highlight the new columns.
+    fillAddCol = PatternFill("solid", fgColor="DDFFE2")
+    fillChange = PatternFill("solid", fgColor="FFFFBB")
+    wsRows = tuple(outSheet.rows)
+    # newKeyIndex will be used to look up rows in newRows.
+    newKeyIndex = {}
+    jNewKey = next( j for j in range(len(newHeaders)) if newHeaders[j] == key )
+    jOldKey = next( j for j in range(len(oldHeaders)) if oldHeaders[j] == key )
+    for i in range(iNewHeaders+1, iNewTrailing):
+        v = newRows[i][jNewKey]
+        if v == '':
+            raise  ValueError(f"[ERROR] Table in newFile contains an empty key at row {i+1}\n")
+        if v in newKeyIndex:
+            raise  ValueError(f"[ERROR] Table in newFile contains a duplicate key on row {i+1}: '{v}'\n")
+        newKeyIndex[v] = i
+    newHeaderIndex = { h: j for j, h in enumerate(newHeaders) }
+    for jOld in range(len(oldHeaders)):
+        h = oldHeaders[jOld]
+        if h not in mergeHeaders: 
+            continue
+        jNew = newHeaderIndex[h]
+        for i in range(iOldHeaders+1, iOldTrailing):
+            oldRow = oldRows[i]
+            oldValue = oldRow[jOld]
+            oldKey = oldRow[jOldKey]
+            newValue = ''
+            if oldKey in newKeyIndex:
+                newValue = newRows[newKeyIndex[oldKey]][jNew]
+                if newValue != oldValue:
+                    wsRows[i][jOld].value = newValue
+                    if oldValue == '':
+                        # New value
+                        wsRows[i][jOld].fill = fillAddCol
+                    else:
+                        # Value changed
+                        wsRows[i][jOld].fill = fillChange
+
+    # Write the output file
+    outSheet.title = 'Merged'
+    outWb.save(outFile)
+    sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
 
 ##################### WriteDiffFile #####################
 def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, outFile):
@@ -615,8 +728,10 @@ def main():
                     help='Specifies the sheet in newFile to be compared.\n If no sheet is specified, the first sheet containing the\n specified header will be used.')
     argParser.add_argument('--sheet',
                     help='Specifies the sheet to be compared, in both oldFile and newFile.\n If no sheet is specified, the first sheet containing the\n specified header will be used.')
-    argParser.add_argument('--header',
-                    help='Specifies the header H of the first column.\nA row offset (from H) may optionally be included as: --header=H+N .\n If no header is specified, the first row will be used as the header row,\n or the 0-based Nth row, if N is specified as: --Header=+N .')
+    argParser.add_argument('--append', action='store_true',
+                    help='Copy the values of oldFile sheet, appending columns of newFile.\n Rows of newFile that do not exist in newFile are discarded, and leading and trailing rows\n of newFile (before and after the table) are also discarded.')
+    argParser.add_argument('--merge', nargs=1, action='extend',
+                    help='Output a copy of the old sheet, with values from the specifed MERGE column from the new table merged in.  This option may be repeated to merge more than one column.')
     argParser.add_argument('--key',
                     help='Specifies the name of the key column, i.e., its header')
     argParser.add_argument('--out',
@@ -655,7 +770,28 @@ def main():
         raise ValueError(f"[ERROR] Could not find header row in newFile: '{args.newFile}'")
     sys.stderr.write(f"[INFO] Old table rows: {iOldHeaders+1}-{iOldTrailing} file: '{args.oldFile}' sheet: '{oldTitle}'\n")
     sys.stderr.write(f"[INFO] New table rows: {iNewHeaders+1}-{iNewTrailing} file: '{args.newFile}' sheet: '{newTitle}'\n")
-
+    if args.append and args.merge:
+        sys.stderr.write(f"[ERROR] Options --append and --merge cannot be used together.\n")
+        sys.exit(1)
+    if args.merge:
+        # sys.stderr.write(f"args.merge: {repr(args.merge)}\n")
+        oldHeadersSet = set(oldRows[iOldHeaders])
+        newHeadersSet = set(newRows[iNewHeaders])
+        mergeHeaders = set()
+        for h in args.merge:
+            # sys.stderr.write(f"h: {repr(h)}\n")
+            if (h not in oldHeadersSet):
+                sys.stderr.write(f"[ERROR] Column specified in --merge does not exist in old table.\n")
+                sys.exit(1)
+            if (h not in newHeadersSet):
+                sys.stderr.write(f"[ERROR] Column specified in --merge does not exist in new table.\n")
+                sys.exit(1)
+            mergeHeaders.add(h)
+        MergeTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile, mergeHeaders)
+        sys.exit(0)
+    if args.append:
+        AppendTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile)
+        sys.exit(0)
     diffRows, iDiffHeaders, iDiffBody, iDiffTrailing = CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key)
     WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, outFile)
     sys.exit(0)
