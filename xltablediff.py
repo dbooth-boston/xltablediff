@@ -227,7 +227,17 @@ def FindTable(file, sheetTitle, key):
         key = Key used: either the one that was passed in or the first
             possibleKey if no key was specified.
     '''
-    wb = openpyxl.load_workbook(file, data_only=True) 
+    sys.stderr.write(f"[INFO] Reading file: '{file}'\n")
+    wb = None
+    try:
+        wb = openpyxl.load_workbook(file, data_only=True) 
+    except ValueError as e:
+        s = str(e)
+        # sys.stderr.write(f"[INFO] Caught exception: '{s}'\n")
+        if s.startswith('Value does not match pattern'):
+            sys.stderr.write(f"[ERROR] Unable to load file: '{file}'\n If a sheet uses a filter, try eliminating the filter.\n")
+            sys.exit(1)
+        raise e
     # Potentially look through all sheets for the one to compare.
     # If the --sheet option was specified, then only that one will be 
     # checked for the desired header.
@@ -606,8 +616,8 @@ def MergeTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTra
     for oldRow in oldRows:
         outSheet.append(oldRow)
     # Prepare to highlight the new columns.
-    fillAddCol = PatternFill("solid", fgColor="DDFFE2")
-    fillChange = PatternFill("solid", fgColor="FFFFBB")
+    fillAddCol = PatternFill("solid", fgColor="CCFFC2")
+    fillChange = PatternFill("solid", fgColor="FFFFAA")
     wsRows = tuple(outSheet.rows)
     # newKeyIndex will be used to look up rows in newRows.
     newKeyIndex = {}
