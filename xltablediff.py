@@ -384,7 +384,7 @@ def CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex):
     return diffHeaderMarks, diffHeaders
 
 ##################### CompareBody #####################
-def CompareBody(diffRows, diffHeaders, key, 
+def CompareBody(diffRows, diffHeaders, key, ignoreHeaders,
         oldRows, oldHeaders, iOldHeaders, iOldTrailing, oldHeaderIndex, 
         newRows, newHeaders, iNewHeaders, iNewTrailing, newHeaderIndex):
     ''' Compare rows in the body of the table.  Modifies diffRows
@@ -432,12 +432,20 @@ def CompareBody(diffRows, diffHeaders, key,
             diffRows.append(oldDiffRow)
         else:
             break
+    # Remove from commonHeaders columns that should be ignored:
+    commonHeaders = set(oldHeaderIndex.keys()).intersection(set(newHeaderIndex.keys()))
+    # sys.stderr.write(f"commonHeaders: {repr(commonHeaders)}\n")
+    ignoreSet = set(ignoreHeaders)
+    remainingHeaders = ignoreSet.difference(commonHeaders)
+    if remainingHeaders:
+        h = sorted(remainingHeaders).join(" ")
+        sys.stderr.write(f"[ERROR] Bad --ignore column name(s): h\n Column headers specified with --ignore must exist in both old and new tables\n")
+        sys.exit(1)
+    compareHeaders = commonHeaders.difference(ignoreSet)
     # Now copy the newRows into diffRows, marking each diff row 
     # as one of {=, -, +, c-, c+}.  Each time a new row has
     # a corresponding old row that has any deleted rows after it,
     # also copy them in.  
-    commonHeaders = set(oldHeaderIndex.keys()).intersection(set(newHeaderIndex.keys()))
-    # sys.stderr.write(f"commonHeaders: {repr(commonHeaders)}\n")
     for ii, k in enumerate(newKeys):
         i = ii+iNewHeaders+1
         newRow = newRows[i]
@@ -452,7 +460,7 @@ def CompareBody(diffRows, diffHeaders, key,
                 if h in oldHeaderIndex and h not in newHeaderIndex:
                     newDiffRow[j+1] = oldRow[oldHeaderIndex[h]]
             # Did the rows change (excluding added/deleted columns)?
-            isEqual = next( (False for h in commonHeaders if oldRow[oldHeaderIndex[h]] != newRow[newHeaderIndex[h]]), True )
+            isEqual = next( (False for h in compareHeaders if oldRow[oldHeaderIndex[h]] != newRow[newHeaderIndex[h]]), True )
             if isEqual:
                 # No values changed in columns that are in common in this row.
                 # Only add one row to diffRows.
@@ -490,7 +498,7 @@ def CompareBody(diffRows, diffHeaders, key,
     return diffRows
 
 ##################### CompareTables #####################
-def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key):
+def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, ignoreHeaders):
     ''' Compare the old and new tables, and any leading or trailing rows.  
     Returns:
         diffRows = Rows of diff cells.  The first cell of each row is
@@ -539,7 +547,7 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNew
         diffRows.append(diffRow)
     ###### Compare the table body rows.
     # Compare rows, excluding columns that were added or deleted.
-    CompareBody(diffRows, diffHeaders, key, 
+    CompareBody(diffRows, diffHeaders, key, ignoreHeaders,
         oldRows, oldHeaders, iOldHeaders, iOldTrailing, oldHeaderIndex, 
         newRows, newHeaders, iNewHeaders, iNewTrailing, newHeaderIndex)
     iDiffTrailing = len(diffRows)
@@ -658,7 +666,7 @@ def MergeTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTra
     sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
 
 ##################### WriteDiffFile #####################
-def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, outFile):
+def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, ignoreHeaders, outFile):
     ''' Write the diffs to the outFile as XLSX, highlighting
     changed rows/columns/cells.
     '''
@@ -687,10 +695,13 @@ def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, outFile
     # Determine column highlights for added/deleted columns. 
     # colFills will highlight added or deleted columns.
     colFills = [ None for j in range(nColumns) ]
+    ignoreSet = set(ignoreHeaders)
     for j in range(nColumns):
         if oldHeaders[j] == '':  colFills[j] = fillAddCol
         if newHeaders[j] == '':  colFills[j] = fillDelCol
-
+        # It's enough to check oldHeaders hear, because ignoreSet
+        # only includes headers that are in both old and new:
+        if oldHeaders[j] in ignoreSet: colFills[j] = fillIgnore
     # Highlight the spreadsheet.
     wsRows = tuple(outSheet.rows)
     for i, diffRow in enumerate(diffRows):
@@ -723,7 +734,6 @@ def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, outFile
                     # Highlight this cell and the one above it, if non-empty
                     if diffRows[i-1][j]: wsRows[i-1][j].fill = fillDelRow
                     if diffRows[i][j]:   wsRows[i][j].fill =   fillAddRow
-
     outSheet.title = 'Differences'
     outWb.save(outFile)
     sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
@@ -742,10 +752,12 @@ def main():
                     help='Copy the values of oldFile sheet, appending columns of newFile.\n Rows of newFile that do not exist in newFile are discarded, and leading and trailing rows\n of newFile (before and after the table) are also discarded.')
     argParser.add_argument('--merge', nargs=1, action='extend',
                     help='Output a copy of the old sheet, with values from the specifed MERGE column from the new table merged in.  This option may be repeated to merge more than one column.')
+    argParser.add_argument('--ignore', nargs=1, action='extend',
+                    help='Ignore the specified column when comparing old and new table rows.  This option may be repeated to ignore multiple columns.  The specified column must exist in both old and new tables.')
     argParser.add_argument('--key',
                     help='Specifies the name of the key column, i.e., its header')
     argParser.add_argument('--out',
-                    help='Output file of differences', required=True)
+                    help='Output file of differences.  This "option" is actually REQUIRED.', required=True)
     argParser.add_argument('oldFile', metavar='oldFile.xlsx', type=str,
                     help='Old spreadsheet (*.xlsx)')
     argParser.add_argument('newFile', metavar='newFile.xlsx', type=str,
@@ -802,8 +814,9 @@ def main():
     if args.append:
         AppendTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile)
         sys.exit(0)
-    diffRows, iDiffHeaders, iDiffBody, iDiffTrailing = CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key)
-    WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, outFile)
+    ignoreHeaders = args.ignore if args.ignore else []
+    diffRows, iDiffHeaders, iDiffBody, iDiffTrailing = CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, ignoreHeaders)
+    WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, ignoreHeaders, outFile)
     sys.exit(0)
 
 
