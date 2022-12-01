@@ -314,13 +314,13 @@ def RemoveTrailingEmpties(items):
     nItems = next( (i+1 for i in range(len(items)-1, -1, -1) if items[i]), 0 )
     return items[0 : nItems]
 
-##################### CompareRows #####################
-def CompareRows(diffRows, oldRows, iOldStart, nOldRows, newRows, iNewStart, nNewRows, nDiffHeaders):
+##################### CompareLeadingTrailingRows #####################
+def CompareLeadingTrailingRows(diffRows, oldRows, iOldStart, nOldRows, newRows, iNewStart, nNewRows, nDiffHeaders):
     ''' Compare the old and new leading or trailing rows.   Trailing empty cells
     are ignored.  The first item in each returned diffRow is one of {=, -, +}.
     Modifies diffRows in place.
     '''
-    # sys.stderr.write(f"CompareRows\n")
+    # sys.stderr.write(f"CompareLeadingTrailingRows\n")
     # Concatenate the cells in each row, separated by tabs.
     oldLeadingLines = [ "\t".join( RemoveTrailingEmpties(oldRows[i]) ) for i in range(iOldStart, nOldRows) ]
     newLeadingLines = [ "\t".join( RemoveTrailingEmpties(newRows[i]) ) for i in range(iNewStart, nNewRows) ]
@@ -498,7 +498,7 @@ def CompareBody(diffRows, diffHeaders, key, ignoreHeaders,
     return diffRows
 
 ##################### CompareTables #####################
-def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, ignoreHeaders):
+def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, ignoreHeaders, command):
     ''' Compare the old and new tables, and any leading or trailing rows.  
     Returns:
         diffRows = Rows of diff cells.  The first cell of each row is
@@ -523,10 +523,19 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNew
     newHeaders = newRows[iNewHeaders]
     newHeaderIndex = { v: i for i, v in enumerate(newHeaders) }
     diffHeaderMarks, diffHeaders = CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex)
-    ###### Compare the lines before the start of the table.
-    nDiffHeaders = len(diffHeaders)     # N columns in diffRows table
+    # nDiffHeader does not include the marker column.
+    # The total number of columns in diffRows will be nDiffHeaders+1.
+    nDiffHeaders = len(diffHeaders)     
     diffRows = []
-    CompareRows(diffRows, oldRows, 0, iOldHeaders, newRows, 0, iNewHeaders, nDiffHeaders)
+    ###### Echo the command on the first row?
+    if command:
+        # Add one to the length for the marker column:
+        cmdRow = [ '' for j in range(len(diffHeaders)+1) ]
+        cmdRow[0] = '#'
+        cmdRow[1] = command
+        diffRows.append(cmdRow)
+    ###### Compare the lines before the start of the table.
+    CompareLeadingTrailingRows(diffRows, oldRows, 0, iOldHeaders, newRows, 0, iNewHeaders, nDiffHeaders)
     iDiffHeaders = len(diffRows)
     iDiffBody = iDiffHeaders + 2    # 2 for old and new header rows
     # sys.stderr.write(f"iOldTrailing: {iOldTrailing} iNewTrailing: {iNewTrailing}\n")
@@ -552,7 +561,7 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNew
         newRows, newHeaders, iNewHeaders, iNewTrailing, newHeaderIndex)
     iDiffTrailing = len(diffRows)
     ###### Compare trailing rows (after the table).
-    CompareRows(diffRows, oldRows, iOldTrailing, len(oldRows), newRows, iNewTrailing, len(newRows), nDiffHeaders)
+    CompareLeadingTrailingRows(diffRows, oldRows, iOldTrailing, len(oldRows), newRows, iNewTrailing, len(newRows), nDiffHeaders)
     return diffRows, iDiffHeaders, iDiffBody, iDiffTrailing
 
 ##################### AppendTable #####################
@@ -815,7 +824,13 @@ def main():
         AppendTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile)
         sys.exit(0)
     ignoreHeaders = args.ignore if args.ignore else []
-    diffRows, iDiffHeaders, iDiffBody, iDiffTrailing = CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, ignoreHeaders)
+    # command will be the command string to echo in the first row output.
+    command = ''
+    if 1:
+        argv = sys.argv.copy()
+        argv[0] = os.path.basename(argv[0])
+        command = " ".join(argv)
+    diffRows, iDiffHeaders, iDiffBody, iDiffTrailing = CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, ignoreHeaders, command)
     WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, ignoreHeaders, outFile)
     sys.exit(0)
 
