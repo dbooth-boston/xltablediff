@@ -567,7 +567,7 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNew
 
 ##################### AppendTable #####################
 def AppendTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile):
-    ''' Append columns of old table to new table.
+    ''' Append columns of new table to old table.
     Write the resulting spreadsheet to outFile.
     '''
     # Copy oldRows from the beginning through the headers. 
@@ -759,9 +759,9 @@ def main():
     argParser.add_argument('--sheet',
                     help='Specifies the sheet to be compared, in both oldFile and newFile.\n If no sheet is specified, the first sheet containing the\n specified header will be used.')
     argParser.add_argument('--append', action='store_true',
-                    help='Copy the values of oldFile sheet, appending columns of newFile.\n Rows of newFile that do not exist in newFile are discarded, and leading and trailing rows\n of newFile (before and after the table) are also discarded.')
+                    help='Copy the values of oldFile sheet, appending columns of newFile.\n Rows of newFile that do not exist in oldFile are discarded, and leading and trailing rows\n of newFile (before and after the table) are also discarded.  The number of rows in the output file will be the same is in oldFile.')
     argParser.add_argument('--merge', nargs=1, action='extend',
-                    help='Output a copy of the old sheet, with values from the specifed MERGE column from the new table merged in.  This option may be repeated to merge more than one column.')
+                    help='Output a copy of the old sheet, with values from the specifed MERGE column from the new table merged in.  This option may be repeated to merge more than one column.  The number of rows in the output file will be the same is in oldFile.')
     argParser.add_argument('--ignore', nargs=1, action='extend',
                     help='Ignore the specified column when comparing old and new table rows.  This option may be repeated to ignore multiple columns.  The specified column must exist in both old and new tables.')
     argParser.add_argument('--key',
