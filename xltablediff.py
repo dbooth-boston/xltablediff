@@ -266,7 +266,8 @@ def FindTable(file, sheetTitle, key):
         if iHeaders is None:
             # Not found.  Maybe the key is wrong.
             if key:
-                # Try again without specifying the key
+                # Try again without specifying the key, in order to
+                # suggest possible keys.
                 iOther, otherPossibleKeys = GuessHeaderRow(rows, None, title)
                 allPossibleKeys.update(otherPossibleKeys)
         else:
@@ -812,10 +813,10 @@ def main():
         for h in args.merge:
             # sys.stderr.write(f"h: {repr(h)}\n")
             if (h not in oldHeadersSet):
-                sys.stderr.write(f"[ERROR] Column specified in --merge does not exist in old table.\n")
+                sys.stderr.write(f"[ERROR] Column specified in --merge='{h}' does not exist in old table.\n")
                 sys.exit(1)
             if (h not in newHeadersSet):
-                sys.stderr.write(f"[ERROR] Column specified in --merge does not exist in new table.\n")
+                sys.stderr.write(f"[ERROR] Column specified in --merge='{h}' does not exist in new table.\n")
                 sys.exit(1)
             mergeHeaders.add(h)
         MergeTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile, mergeHeaders)
