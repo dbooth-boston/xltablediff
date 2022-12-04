@@ -38,8 +38,10 @@
 #  1. Only one table in one sheet is compared with one table in one other 
 #     sheet.  
 #
-# Test:
+# Test basic diff:
 #   ./xltablediff.py --newSheet=Sheet2 --key=ID test1in.xlsx test1in.xlsx --out=test1out.xlsx
+# Test --merge:
+#   ./xltablediff.py' '--newSheet=Sheet2' '--key=ID' 'test1in.xlsx' 'test1in.xlsx' '--merge=Color' '--out' 'test1out.xlsx'
 
 def Usage():
     return f'''Usage:
@@ -214,23 +216,14 @@ def GuessHeaderRow(rows, key, title):
     # sys.stderr.write(f"possibleKeys: {repr(possibleKeys)}\n")
     return iHeaders, possibleKeys
 
-##################### FindTable #####################
-def FindTable(file, sheetTitle, key):
-    ''' Read the given xlsx file and find the desired table.
-    Raises an exception if the table is not found.
-    Returns a tuple:
-        title = title of the sheet in which the table was found.
-        rows = rows (values only) of the sheet in which the table was found.
-        iHeaders = 0-based index of the header row in rows.
-        iTrailing = 0-based index of rows after the table, which begins
-            with the first row that lacks a key.
-        key = Key used: either the one that was passed in or the first
-            possibleKey if no key was specified.
+##################### LoadWorkBook #####################
+def LoadWorkBook(file, data_only=True):
+    ''' Read a .xlsx file and return the workbook.
     '''
-    sys.stderr.write(f"[INFO] Reading file: '{file}'\n")
     wb = None
     try:
-        wb = openpyxl.load_workbook(file, data_only=True) 
+        sys.stderr.write(f"[INFO] Reading file: '{file}'\n")
+        wb = openpyxl.load_workbook(file, data_only) 
     except ValueError as e:
         s = str(e)
         # sys.stderr.write(f"[INFO] Caught exception: '{s}'\n")
@@ -238,6 +231,21 @@ def FindTable(file, sheetTitle, key):
             sys.stderr.write(f"[ERROR] Unable to load file: '{file}'\n If a sheet uses a filter, try eliminating the filter.\n")
             sys.exit(1)
         raise e
+    return wb
+
+##################### FindTable #####################
+def FindTable(wb, wantedTitle, key):
+    ''' Read a workbook wb and possible a wantedTitle, find the desired table.
+    Raises an exception if the table is not found.
+    Returns a tuple:
+        sheet = the sheet in which the table was found.
+        rows = rows (values only) of the sheet in which the table was found.
+        iHeaders = 0-based index of the header row in rows.
+        iTrailing = 0-based index of rows after the table, which begins
+            with the first row that lacks a key.
+        key = Key used: either the one that was passed in or the first
+            possibleKey if no key was specified.
+    '''
     # Potentially look through all sheets for the one to compare.
     # If the --sheet option was specified, then only that one will be 
     # checked for the desired header.
@@ -247,10 +255,11 @@ def FindTable(file, sheetTitle, key):
     title = ""
     allPossibleKeys = set()
     for s in wb:
-        if sheetTitle:
-            if sheetTitle == s.title.strip(): 
+        # sys.stderr.write(f"[INFO] Sheet: '{s.title} type of s: {repr(type(s))}'\n")
+        title = s.title.strip()
+        if wantedTitle:
+            if title == wantedTitle:
                 sheet = s
-                # sys.stderr.write(f"[INFO] Found sheet: '{s.title}'\n")
             else:
                 # sys.stderr.write(f"[INFO] Skipping unwanted sheet: '{s.title}'\n")
                 continue
@@ -259,7 +268,6 @@ def FindTable(file, sheetTitle, key):
         # sys.stderr.write(f"[INFO] file: '{file}' c.value rows: \n{repr(rows)} \n")
         TrimAndPad(rows)
         NoTabs(rows)
-        title = s.title.strip()
         # Look for the header row.
         iHeaders, possibleKeys = GuessHeaderRow(rows, key, title)
         allPossibleKeys.update(possibleKeys)
@@ -277,8 +285,8 @@ def FindTable(file, sheetTitle, key):
         if sheet:
             break
     if not sheet:
-        if sheetTitle:
-            sys.stderr.write(f"[ERROR] Sheet not found: '{sheetTitle}'\n")
+        if wantedTitle:
+            sys.stderr.write(f"[ERROR] Sheet not found: '{wantedTitle}'\n")
             sys.stderr.write(f" in file: '{file}'\n")
             sys.exit(1)
         if key:
@@ -305,7 +313,7 @@ def FindTable(file, sheetTitle, key):
     iTrailing = next( (i for i in range(iHeaders, len(rows)) if not rows[i][jKey]), len(rows) )
     # sys.stderr.write(f"[INFO] iTrailing: {iTrailing} file: '{file}'\n")
     # sys.stderr.write(f"[INFO] file: '{file}' rows: \n{repr(rows)} \n")
-    return (title, rows, iHeaders, iTrailing, key)
+    return (sheet, rows, iHeaders, iTrailing, key)
 
 ##################### RemoveTrailingEmpties #####################
 def RemoveTrailingEmpties(items):
@@ -622,21 +630,19 @@ def AppendTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTr
     sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
 
 ##################### MergeTable #####################
-def MergeTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile, mergeHeaders):
-    ''' Merge specified columns of old table to new table.
+def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile, mergeHeaders):
+    ''' Merge specified columns of new table to old table,
+    modifying oldWb/oldSheet in place (in memory).
     Write the resulting spreadsheet to outFile.
     '''
     oldHeaders = oldRows[iOldHeaders]
     newHeaders = newRows[iNewHeaders]
-    # Create the output spreadsheet and fill it with old data.
-    outWb = openpyxl.Workbook()
-    outSheet = outWb.active
-    for oldRow in oldRows:
-        outSheet.append(oldRow)
+    sys.stderr.write(f"[INFO] MergeTable n columns in oldHeaders: '{len(oldHeaders)}'\n")
+    sys.stderr.write(f"[INFO] MergeTable n columns in oldSheet: '{len(list(oldSheet.rows)[0])}'\n")
     # Prepare to highlight the new columns.
     fillAddCol = PatternFill("solid", fgColor="CCFFC2")
     fillChange = PatternFill("solid", fgColor="FFFFAA")
-    wsRows = tuple(outSheet.rows)
+    wsRows = tuple(oldSheet.rows)
     # newKeyIndex will be used to look up rows in newRows.
     newKeyIndex = {}
     jNewKey = next( j for j in range(len(newHeaders)) if newHeaders[j] == key )
@@ -669,10 +675,9 @@ def MergeTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTra
                     else:
                         # Value changed
                         wsRows[i][jOld].fill = fillChange
-
     # Write the output file
-    outSheet.title = 'Merged'
-    outWb.save(outFile)
+    oldSheet.title = 'Merged'
+    oldWb.save(outFile)
     sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
 
 ##################### WriteDiffFile #####################
@@ -793,11 +798,15 @@ def main():
         sys.stderr.write(Usage())
         sys.exit(1)
     # sys.stderr.write("args: \n" + repr(args) + "\n\n")
+    oldWb = LoadWorkBook(args.oldFile, data_only=False)
     # These will be rows of values-only:
-    (oldTitle, oldRows, iOldHeaders, iOldTrailing, key) = FindTable(args.oldFile, oldSheetTitle, key)
+    (oldSheet, oldRows, iOldHeaders, iOldTrailing, key) = FindTable(oldWb, oldSheetTitle, key)
+    oldTitle = oldSheet.title
     if iOldHeaders is None:
         raise ValueError(f"[ERROR] Could not find header row in newFile: '{args.oldFile}'")
-    (newTitle, newRows, iNewHeaders, iNewTrailing, key) = FindTable(args.newFile, newSheetTitle, key)
+    newWb = LoadWorkBook(args.newFile)
+    (newSheet, newRows, iNewHeaders, iNewTrailing, key) = FindTable(newWb, newSheetTitle, key)
+    newTitle = newSheet.title
     if iNewHeaders is None:
         raise ValueError(f"[ERROR] Could not find header row in newFile: '{args.newFile}'")
     sys.stderr.write(f"[INFO] Old table rows: {iOldHeaders+1}-{iOldTrailing} file: '{args.oldFile}' sheet: '{oldTitle}'\n")
@@ -819,7 +828,7 @@ def main():
                 sys.stderr.write(f"[ERROR] Column specified in --merge='{h}' does not exist in new table.\n")
                 sys.exit(1)
             mergeHeaders.add(h)
-        MergeTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile, mergeHeaders)
+        MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile, mergeHeaders)
         sys.exit(0)
     if args.append:
         AppendTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile)
