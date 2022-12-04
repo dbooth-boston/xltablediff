@@ -625,12 +625,12 @@ def AppendTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTr
         for j in range(nOldColumns, nTotalColumns):
             wsRows[i][j].fill = fillAddCol
     # Write the output file
-    outSheet.title = 'Appended'
+    outSheet.title += '-Appended'
     outWb.save(outFile)
     sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
 
 ##################### MergeTable #####################
-def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile, mergeHeaders):
+def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newSheet, newRows, iNewHeaders, iNewTrailing, key, outFile, mergeHeaders):
     ''' Merge specified columns of new table to old table,
     modifying oldWb/oldSheet in place (in memory).
     Write the resulting spreadsheet to outFile.
@@ -642,7 +642,8 @@ def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newRows, iNe
     # Prepare to highlight the new columns.
     fillAddCol = PatternFill("solid", fgColor="CCFFC2")
     fillChange = PatternFill("solid", fgColor="FFFFAA")
-    wsRows = tuple(oldSheet.rows)
+    oldWsRows = tuple(oldSheet.rows)
+    newWsRows = tuple(newSheet.rows)
     # newKeyIndex will be used to look up rows in newRows.
     newKeyIndex = {}
     jNewKey = next( j for j in range(len(newHeaders)) if newHeaders[j] == key )
@@ -655,6 +656,8 @@ def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newRows, iNe
             raise  ValueError(f"[ERROR] Table in newFile contains a duplicate key on row {i+1}: '{v}'\n")
         newKeyIndex[v] = i
     newHeaderIndex = { h: j for j, h in enumerate(newHeaders) }
+    # Looping through columns first (instead of rows) because we can skip
+    # the entire column if it is not in mergeHeaders.
     for jOld in range(len(oldHeaders)):
         h = oldHeaders[jOld]
         if h not in mergeHeaders: 
@@ -662,21 +665,23 @@ def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newRows, iNe
         jNew = newHeaderIndex[h]
         for i in range(iOldHeaders+1, iOldTrailing):
             oldRow = oldRows[i]
-            oldValue = oldRow[jOld]
+            # oldRow has the string value.  Instead, compare the original
+            # value (with its original type).
+            oldValue = oldWsRows[i][jOld].value
             oldKey = oldRow[jOldKey]
-            newValue = ''
             if oldKey in newKeyIndex:
-                newValue = newRows[newKeyIndex[oldKey]][jNew]
+                # newValue = newRows[newKeyIndex[oldKey]][jNew]
+                newValue = newWsRows[newKeyIndex[oldKey]][jNew].value
                 if newValue != oldValue:
-                    wsRows[i][jOld].value = newValue
-                    if oldValue == '':
+                    oldWsRows[i][jOld].value = newValue
+                    if oldValue is None or oldValue == '':
                         # New value
-                        wsRows[i][jOld].fill = fillAddCol
+                        oldWsRows[i][jOld].fill = fillAddCol
                     else:
                         # Value changed
-                        wsRows[i][jOld].fill = fillChange
+                        oldWsRows[i][jOld].fill = fillChange
     # Write the output file
-    oldSheet.title = 'Merged'
+    oldSheet.title += '-Merged'
     oldWb.save(outFile)
     sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
 
@@ -828,7 +833,7 @@ def main():
                 sys.stderr.write(f"[ERROR] Column specified in --merge='{h}' does not exist in new table.\n")
                 sys.exit(1)
             mergeHeaders.add(h)
-        MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile, mergeHeaders)
+        MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newSheet, newRows, iNewHeaders, iNewTrailing, key, outFile, mergeHeaders)
         sys.exit(0)
     if args.append:
         AppendTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile)
