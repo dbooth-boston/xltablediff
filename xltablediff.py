@@ -38,10 +38,12 @@
 #  1. Only one table in one sheet is compared with one table in one other 
 #     sheet.  
 #
-# Test basic diff:
-#   ./xltablediff.py --newSheet=Sheet2 --key=ID test1in.xlsx test1in.xlsx --out=test1out.xlsx
-# Test --merge:
-#   ./xltablediff.py' '--newSheet=Sheet2' '--key=ID' 'test1in.xlsx' 'test1in.xlsx' '--merge=Color' '--out' 'test1out.xlsx'
+# Testing:
+'''
+Diff test:  xltablediff.py  --key=ID test1old.xlsx test1new.xlsx --out test1diff.xlsx
+Merge test:  xltablediff.py  --key=ID test1old.xlsx test1new.xlsx --merge=Color --out test1merge.xlsx
+Append test:  xltablediff.py  --key=ID test1old.xlsx test1new.xlsx --append --out test1append.xlsx
+'''
 
 def Usage():
     return f'''Usage:
@@ -174,40 +176,47 @@ def TrimAndPad(rows):
 
 ##################### GuessHeaderRow #####################
 def GuessHeaderRow(rows, key, title):
-    ''' Guess the header row, as the first row with the most non-empty
-    cells, which much be unique within that row.  
+    ''' Guess the header row, as the first row with entirely non-empty
+    unique cells.  
     If key was specified, the header row also must contain the key.
     Returns:
         iHeaders = the 0-based index of the header row, or None if not found.
         possibleKeys = list of headers with unique non-empty column values
     '''
     iHeaders = None
-    maxValues = 0
+    headers = None
+    nColumns = len(rows[0])
     # sys.stderr.write(f"[INFO] Sheet '{title}' n rows: {len(rows)}\n")
     # r is 0-based index.
     for r in range(len(rows)):
-        # sys.stderr.write(f"[INFO] Processing sheet '{title}' row: {r+1}\n")
         row = rows[r]
-        if key and key not in row:
-            continue
-        values = [ v for v in row if v ]
-        nValues = len(values)
-        nSetItems = len(set(values))
+        # sys.stderr.write(f"[INFO] Sheet '{title}' row {r+1}: {repr(row)}\n")
+        # sys.stderr.write(f"[INFO] Processing sheet '{title}' row: {r+1}\n")
+        nValues = next( (j for j,v in enumerate(row ) if v == ''), len(row) )
+        # sys.stderr.write(f"[INFO] nValues: {repr(nValues)}\n")
+        if nValues != nColumns: continue
+        if key and key not in row: continue
+        nSetItems = len(set(row))
         if nSetItems != nValues:
             # Cannot be a header row, because the values are not unique.
             continue
-        if nValues > maxValues:
-            maxValues = nValues
-            iHeaders = r
+        # Stop at the first qualifying row
+        headers = row.copy()
+        iHeaders = r
+        break
     possibleKeys = []
     if iHeaders is not None:
-        headers = rows[iHeaders]
         # sys.stderr.write(f"headers: {repr(headers)}\n")
+        # Collect possibleKeys.
         for j in range(len(headers)):
             colValues = set()
+            # Disqualify the column if it contains duplicate keys
+            # before the first empty cell (which would indicate the end
+            # of the table).
             dupeFound = None
             for i in range(iHeaders+1, len(rows)):
                 v = rows[i][j]
+                if v == '': break
                 if v in colValues:
                     dupeFound = True
                     break
@@ -234,7 +243,7 @@ def LoadWorkBook(file, data_only=True):
     return wb
 
 ##################### FindTable #####################
-def FindTable(wb, wantedTitle, key):
+def FindTable(wb, wantedTitle, key, file):
     ''' Read a workbook wb and possible a wantedTitle, find the desired table.
     Raises an exception if the table is not found.
     Returns a tuple:
@@ -264,7 +273,7 @@ def FindTable(wb, wantedTitle, key):
                 # sys.stderr.write(f"[INFO] Skipping unwanted sheet: '{s.title}'\n")
                 continue
         # Get the rows of cells:
-        rows = [ [str(v if v is not None else "").strip() for v in col] for col in s.values ]
+        rows = [ [str(Value(v)).strip() for v in valuesRow] for valuesRow in s.values ]
         # sys.stderr.write(f"[INFO] file: '{file}' c.value rows: \n{repr(rows)} \n")
         TrimAndPad(rows)
         NoTabs(rows)
@@ -291,7 +300,8 @@ def FindTable(wb, wantedTitle, key):
             sys.exit(1)
         if key:
             sys.stderr.write(f"[ERROR] Key not found: '{key}'\n")
-            sys.stderr.write(f" in file: '{file}'\n")
+            sys.stderr.write(f" In file: '{file}'\n")
+            sys.stderr.write(f" This can be caused by having data in a column beyond the table.\n")
             pKeys = " ".join(sorted(map((lambda v: f"'{v}'"), allPossibleKeys)))
             if allPossibleKeys:
                 sys.stderr.write(f" Potential keys: {pKeys}\n")
@@ -310,7 +320,9 @@ def FindTable(wb, wantedTitle, key):
         key = rows[iHeaders][jKey]
         sys.stderr.write(f"[INFO] Assuming key: '{key}'\n")
     # Find the end of the table: the first row with an empty key (if any).
-    iTrailing = next( (i for i in range(iHeaders, len(rows)) if not rows[i][jKey]), len(rows) )
+    iTrailing = next( (i for i in range(iHeaders, len(rows)) if rows[i][jKey] == ''), len(rows) )
+    # sys.stderr.write(f"[INFO] jKey: {jKey} file: '{file}'\n")
+    # sys.stderr.write(f"[INFO] iHeaders: {iHeaders} file: '{file}'\n")
     # sys.stderr.write(f"[INFO] iTrailing: {iTrailing} file: '{file}'\n")
     # sys.stderr.write(f"[INFO] file: '{file}' rows: \n{repr(rows)} \n")
     return (sheet, rows, iHeaders, iTrailing, key)
@@ -358,6 +370,7 @@ def CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex):
         diffHeaders = Combined old and new headers
     '''
     # Headers are treated as column keys: they must be unique.
+    Warn(f"in CompareHeaders oldHeaders: {repr(oldHeaders)}")
     if '' in oldHeaders:
         iEmpty = next( (i for i in range(len(oldHeaders)) if oldHeaders[i] == ''), -1 )
         letter = openpyxl.utils.cell.get_column_letter(iEmpty+1)
@@ -506,6 +519,19 @@ def CompareBody(diffRows, diffHeaders, key, ignoreHeaders,
     # sys.stderr.write(f"diffRows: \n{repr(diffRows)}\n")
     return diffRows
 
+##################### Info #####################
+def Info(s):
+    sys.stderr.write(f"[INFO] {s}\n")
+
+##################### Warn #####################
+def Warn(s):
+    sys.stderr.write(f"[WARNING] {s}\n")
+
+##################### Die #####################
+def Die(s):
+    sys.stderr.write(f"[ERROR] {s}\n")
+    sys.exit(1)
+
 ##################### CompareTables #####################
 def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, ignoreHeaders, command):
     ''' Compare the old and new tables, and any leading or trailing rows.  
@@ -528,8 +554,10 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNew
     # Old and new headers are treated as column keys: they must be unique.
     # And they must not contain any empty header.
     oldHeaders = oldRows[iOldHeaders]
+    Warn(f"oldHeaders: {repr(oldHeaders)}")
     oldHeaderIndex = { v: i for i, v in enumerate(oldHeaders) }
     newHeaders = newRows[iNewHeaders]
+    Warn(f"newHeaders: {repr(newHeaders)}")
     newHeaderIndex = { v: i for i, v in enumerate(newHeaders) }
     diffHeaderMarks, diffHeaders = CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex)
     # nDiffHeader does not include the marker column.
@@ -573,16 +601,30 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNew
     CompareLeadingTrailingRows(diffRows, oldRows, iOldTrailing, len(oldRows), newRows, iNewTrailing, len(newRows), nDiffHeaders)
     return diffRows, iDiffHeaders, iDiffBody, iDiffTrailing
 
+##################### Value #####################
+def Value(v):
+    ''' Default to the empty string if v is None.
+    '''
+    return '' if v is None else v
+
 ##################### AppendTable #####################
-def AppendTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile):
+def AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newSheet, newRows, iNewHeaders, iNewTrailing, key, outFile):
     ''' Append columns of new table to old table.
     Write the resulting spreadsheet to outFile.
+    oldWb (and oldSheet) are modified in memory!
     '''
-    # Copy oldRows from the beginning through the headers. 
     oldHeaders = oldRows[iOldHeaders]
     newHeaders = newRows[iNewHeaders]
+    d = oldSheet.calculate_dimension()
+    d = newSheet.calculate_dimension()
+    oldCellRows = tuple(oldSheet.rows)
+    newCellRows = tuple(newSheet.rows)
+    nOldColumns = len(oldHeaders)
+    nNewColumns = len(newHeaders)
+    # Copy oldRows from the beginning through the headers. 
     outRows = []
     emptyNewRow = [ '' for j in range(len(newHeaders)) ]
+    emptyNewCellRow = [ None for j in range(len(newHeaders)) ]
     for i in range(iOldHeaders):
         outRow = oldRows[i].copy()
         outRow.extend(emptyNewRow)
@@ -593,40 +635,60 @@ def AppendTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTr
     jNewKey = next( j for j in range(len(newHeaders)) if newHeaders[j] == key )
     # Make a newKeyIndex
     newKeyIndex = { newRows[i][jNewKey]: i for i in range(iNewHeaders+1, len(newRows)) }
+    # Extend oldSheet with more columns (for newRows):
+    # sys.stderr.write(f"[INFO] nOldColumns: '{repr(nOldColumns)} nNewColumns: '{repr(nNewColumns)}'\n")
+    oldSheet.insert_cols(nOldColumns+1, nNewColumns)
+    newCellRows = tuple(newSheet.rows)
     # Copy oldRows, appending newRows that exist
     for i in range(iOldHeaders, iOldTrailing):
         outRow = oldRows[i].copy()
         newRow = emptyNewRow
+        newCellRow = emptyNewCellRow
         k = outRow[jOldKey]
         if i == iOldHeaders:
             newRow = newHeaders
+            newCellRow = [ newCellRows[iNewHeaders][j].value for j in range(nNewColumns) ]
         elif k in newKeyIndex:
             newRow = newRows[newKeyIndex[k]]
+            newCellRow = [ newCellRows[newKeyIndex[k]][j].value for j in range(nNewColumns) ]
         outRow.extend(newRow)
         outRows.append(outRow)
+        # sys.stderr.write(f"[INFO] newCellRow: '{repr(newCellRow)}'\n")
+        for j, v in enumerate(newCellRow):
+            c = oldSheet.cell(i+1, nOldColumns+j+1, newCellRow[j])
+            # sys.stderr.write(f"[INFO] nOldColumns: '{repr(nOldColumns)} j: '{repr(j)}'\n")
     # Copy trailing oldRows
     for i in range(iOldTrailing, len(oldRows)):
         outRow = oldRows[i].copy()
         outRow.extend(emptyNewRow)
         outRows.append(outRow)
     # Create the output spreadsheet and fill it with data.
-    outWb = openpyxl.Workbook()
-    outSheet = outWb.active
-    for outRow in outRows:
-        outSheet.append(outRow)
+    if 0:
+        outWb = openpyxl.Workbook()
+        outSheet = outWb.active
+        for outRow in outRows:
+            outSheet.append(outRow)
     # Highlight the new columns.
     fillAddCol =    PatternFill("solid", fgColor="DDFFE2")
-    wsRows = tuple(outSheet.rows)
-    nOldColumns = len(oldHeaders)
-    # Determine how many columns are needed.
-    nTotalColumns = len(oldHeaders) + len(newHeaders)
+    nTotalColumns = nOldColumns + nNewColumns
+    if 0:
+        wsRows = tuple(outSheet.rows)
+        # Determine how many columns are needed.
+        nTotalColumns = len(oldHeaders) + len(newHeaders)
+        for i in range(iOldHeaders, iOldTrailing):
+            outRow = outRows[i]
+            for j in range(nOldColumns, nTotalColumns):
+                wsRows[i][j].fill = fillAddCol
+    oldCellRows = tuple(oldSheet.rows)
     for i in range(iOldHeaders, iOldTrailing):
-        outRow = outRows[i]
+        oldCellRow = oldCellRows[i]
         for j in range(nOldColumns, nTotalColumns):
-            wsRows[i][j].fill = fillAddCol
+            oldCellRow[j].fill = fillAddCol
     # Write the output file
-    outSheet.title += '-Appended'
-    outWb.save(outFile)
+    # outSheet.title += '-Appended'
+    oldSheet.title += '-Appended'
+    # outWb.save(outFile)
+    oldWb.save(outFile)
     sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
 
 ##################### MergeTable #####################
@@ -637,8 +699,8 @@ def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newSheet, ne
     '''
     oldHeaders = oldRows[iOldHeaders]
     newHeaders = newRows[iNewHeaders]
-    sys.stderr.write(f"[INFO] MergeTable n columns in oldHeaders: '{len(oldHeaders)}'\n")
-    sys.stderr.write(f"[INFO] MergeTable n columns in oldSheet: '{len(list(oldSheet.rows)[0])}'\n")
+    # sys.stderr.write(f"[INFO] MergeTable n columns in oldHeaders: '{len(oldHeaders)}'\n")
+    # sys.stderr.write(f"[INFO] MergeTable n columns in oldSheet: '{len(list(oldSheet.rows)[0])}'\n")
     # Prepare to highlight the new columns.
     fillAddCol = PatternFill("solid", fgColor="CCFFC2")
     fillChange = PatternFill("solid", fgColor="FFFFAA")
@@ -667,11 +729,10 @@ def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newSheet, ne
             oldRow = oldRows[i]
             # oldRow has the string value.  Instead, compare the original
             # value (with its original type).
-            oldValue = oldWsRows[i][jOld].value
+            oldValue = Value(oldWsRows[i][jOld].value)
             oldKey = oldRow[jOldKey]
             if oldKey in newKeyIndex:
-                # newValue = newRows[newKeyIndex[oldKey]][jNew]
-                newValue = newWsRows[newKeyIndex[oldKey]][jNew].value
+                newValue = Value(newWsRows[newKeyIndex[oldKey]][jNew].value)
                 if newValue != oldValue:
                     oldWsRows[i][jOld].value = newValue
                     if oldValue is None or oldValue == '':
@@ -684,6 +745,36 @@ def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newSheet, ne
     oldSheet.title += '-Merged'
     oldWb.save(outFile)
     sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
+
+##################### TrimSheet #####################
+def TrimSheet(sheet):
+    ''' Modifies the sheet in place, by trimming empty trailing 
+    rows and columns.
+    '''
+    rows = list(sheet.rows)
+    columns = list(sheet.columns)
+    nRows = len(rows)
+    nColumns = len(columns)
+    # sys.stderr.write(f"Trimming empty rows and columns. nRows: {nRows} nColumns: {nColumns} ...\n")
+    try:
+        # Delete empty trailing rows:
+        while nRows > 0:
+            row = rows[nRows-1]
+            jUsed = next( (j for j in range(nColumns) if Value(row[j].value).strip()  != ''), -1)
+            if jUsed < 0: break
+            sheet.delete_rows(nRows)
+            nRows -= 1
+        if nRows == 0: nColumns = 0
+        # Delete empty trailing columns:
+        while nColumns > 0:
+            column = columns[nColumns-1]
+            iUsed = next( (i for i in range(nColumns) if Value(column[i].value).strip()  != ''), -1)
+            if iUsed < 0: break
+            sheet.delete_cols(nColumns)
+            nColumns -= 1
+        # sys.stderr.write(f"Done trimming. nRows: {nRows} nColumns: {nColumns} ...\n")
+    except AttributeError as e:
+       raise AttributeError(str(e) + f"\n at row {cell.row} column {cell.column}")
 
 ##################### WriteDiffFile #####################
 def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, ignoreHeaders, outFile):
@@ -805,12 +896,14 @@ def main():
     # sys.stderr.write("args: \n" + repr(args) + "\n\n")
     oldWb = LoadWorkBook(args.oldFile, data_only=False)
     # These will be rows of values-only:
-    (oldSheet, oldRows, iOldHeaders, iOldTrailing, key) = FindTable(oldWb, oldSheetTitle, key)
+    (oldSheet, oldRows, iOldHeaders, iOldTrailing, key) = FindTable(oldWb, oldSheetTitle, key, args.oldFile)
+    TrimSheet(oldSheet)
     oldTitle = oldSheet.title
     if iOldHeaders is None:
         raise ValueError(f"[ERROR] Could not find header row in newFile: '{args.oldFile}'")
-    newWb = LoadWorkBook(args.newFile)
-    (newSheet, newRows, iNewHeaders, iNewTrailing, key) = FindTable(newWb, newSheetTitle, key)
+    newWb = LoadWorkBook(args.newFile, data_only=False)
+    (newSheet, newRows, iNewHeaders, iNewTrailing, key) = FindTable(newWb, newSheetTitle, key, args.newFile)
+    TrimSheet(newSheet)
     newTitle = newSheet.title
     if iNewHeaders is None:
         raise ValueError(f"[ERROR] Could not find header row in newFile: '{args.newFile}'")
@@ -836,7 +929,7 @@ def main():
         MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newSheet, newRows, iNewHeaders, iNewTrailing, key, outFile, mergeHeaders)
         sys.exit(0)
     if args.append:
-        AppendTable(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, outFile)
+        AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newSheet, newRows, iNewHeaders, iNewTrailing, key, outFile)
         sys.exit(0)
     ignoreHeaders = args.ignore if args.ignore else []
     # command will be the command string to echo in the first row output.
