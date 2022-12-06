@@ -1,4 +1,4 @@
-#! /bin/bash
+#! /bin/bash -x
 
 # Diff test:
   xltablediff.py  --key ID test1old.xlsx test1new.xlsx --out test1diff.xlsx

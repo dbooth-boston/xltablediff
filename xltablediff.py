@@ -9,93 +9,88 @@
 
 # Show value differences between two spreadsheet tables (old and new).
 # The tables may also have unrelated leading and/or trailing rows before
-# and after the tables.   The leading and trailing rows are also compared,
-# though they are compared as lines.
+# and after the tables.   Those rows are compared as lines, separately from the
+# table comparison.
 #
 # The old and new tables must both have a key column of
-# the same name, which is specified by the --key option.  The keys
-# must uniquely identify the rows in the table.  Added or deleted rows
-# are detected by comparing the keys in the rows-- not by row order.
-# Similarly, added or deleted columns
-# are detected by comparing the old and new column names, i.e., the headers.  
+# the same name, which is specified by the --key option.  
 #
-# Only cell values are compared -- not cell formatting or formulas --
-# and trailing empty rows or cells are ignored.  If a cell somehow contains
-# any tabs they will be silently converted to spaces prior to comparison.
-# 
-# Deleted columns, rows or cells are highlighted with light red; added
-# columns, rows or cells are highlighted with light green.
-# If a row in the table contains values that changed (from old to new),
-# that row will be highlighted  in light yellow and repeated: 
-# the first of the resulting two rows will show the old values;
-# the second row will show the new values.
-# The table's header row and key column are otherwise highlighted in gray-blue.
+# Optionally, columns from the new table can be merged into the
+# old table (using the --merge=MERGE_COLUMN option), or columns
+# from the new table can be appended to the old table (using
+# the --append option).
 #
-# Optionally columns of the new table may be appended to old table,
-# or merged into the old table.  Use './xltablediff.py --help' for options.
-#
-# Limitations:
-#  1. Only one table in one sheet is compared with one table in one other 
-#     sheet.  
-#
-# Testing:
-'''
-Diff test:  xltablediff.py  --key=ID test1old.xlsx test1new.xlsx --out test1diff.xlsx
-Merge test:  xltablediff.py  --key=ID test1old.xlsx test1new.xlsx --merge=Color --out test1merge.xlsx
-Append test:  xltablediff.py  --key=ID test1old.xlsx test1new.xlsx --append --out test1append.xlsx
+# Run './xltablediff.py --help' for options and usage info.
+
+# Use these commands for testing:
+EXAMPLES = '''
+EXAMPLES
+
+# Diff test:  
+  xltablediff.py  --key ID test1old.xlsx test1new.xlsx --out test1diff.xlsx
+
+# Ignore test:  
+  xltablediff.py  --key ID --ignore Color test1old.xlsx test1new.xlsx --out test1ignore.xlsx
+
+# Merge test:  
+  xltablediff.py  --key ID --merge Color test1old.xlsx test1new.xlsx --out test1merge.xlsx
+
+# Append test:  
+  xltablediff.py  --key ID --append test1old.xlsx test1new.xlsx --out test1append.xlsx
 '''
 
-def Usage():
-    return f'''Usage:
-   xltablediff [ --sheet=MySheet1 ] [ --key=K ] oldFile.xlsx newFile.xlsx --out=outFile.xlsx
+EXPLANATION = '''
+Usually you will need to specify a table key using the '--key ID' option,
+where ID is the name of your key column.
 
-Where:
-    --key=K     
-        Specifies K as the name of the key column that uniquely
-        identifies each row in the old and new tables.
-        Key defaults to 'id'.
+A key column must exist in both the old and new table headers.
+(Composite keys are not currently supported.)  Keys are used to uniquely
+identify the rows in the old and new tables, to determine whether a row
+was deleted, added or changed.  The order of rows in each table does
+not affect this comparison, because each row is identified by its key,
+not by its position in the file.
 
-    --sheet=S
-    --oldSheet=S
-    --newSheet=S
-        Specifies S as the name of the sheet containing the table
-        to be compared.  The sheet will be guessed if it is not specified.
-        "--sheet=S" is shorthand for "--oldSheet=S --newSheet=S".
+The first row in a table is the header row, which specifies the names of
+the columns.  Body rows follow.  Column names must be unique.  The order
+of the columns does not affect their comparison, because each column
+is uniquely identified by its column name.  Each cell in the table
+is uniquely identified by the combination of its key and column name.
+Column names are also used to determine whether an entire column was
+deleted or added.
 
-    --out=outFile.xslx
-        Specifies outFile.xlsx as the differences output file to write.  
-        This "option" is actually REQUIRED.
+Tables to be compared may appear in any sheet within oldFile and newFile.
+If you do not specify which sheet to use, the sheet will be guessed.
 
-    --help
-        This help.
+A table is not required to begin at the first row of a sheet.  Leading
+rows (prior to the table) and trialing rows (after the table) are
+permitted -- and will be compared separately from the table comparison
+-- but they must not look too much like header rows, or the header row
+might not be guessed correctly.  (HINT: Potential header rows contain
+only unique non-empty column names, and one of those column names must
+match the specified KEY.  Leading and trailing rows must not meet those
+criteria.)  The end of the table is taken to be the first row in the
+table body that contains an empty key.  Although leading and trailing
+rows are permitted, leading and trailing columns are not permitted:
+the table must begin in the first column, and no data is permitted after
+the last column in the table -- not even in the leading and trailing rows.
 
-The oldFile and newFile tables to
-be compared must begin with a header row containing the names of the
-columns.  Headers -- i.e. column names -- must be unique.  They are
-used to determine whether a column was deleted or added.  The order of
-the columns does not affect the comparison of whether a column was
-deleted or added, because each column is uniquely identified by its
-header.
-
-The key column must exist in both the oldFile and newFile headers.
-It is used to uniquely identify each row,
-to determine whether that row was deleted, added or changed.  The order of
-rows in the file does not affect this comparison, because the row is
-identified by its key, not by its position in the file.  
+Only cell values are compared -- not cell formatting or formulas --
+and trailing empty rows or cells are ignored.  If a cell somehow contains
+any tabs they will be silently converted to spaces prior to comparison.
 
 The resulting outFile highlights differences found between the
 oldFile and newFile tables.  The first column in the outFile
 contains a marker indicating whether the row changed:
-    -   Row was deleted
-    +   Row was added
-    =   Row was not changed (excluding columns added or deleted)
-    c-  Row was changed; this row shows the old content
-    c+  Row was changed; this row shows the new content
+    -   Row deleted
+    +   Row added
+    =   Row unchanged (excluding columns added or deleted)
+    c-  Row changed: this row shows the old content
+    c+  Row changed: this row shows the new content
 '''
 
 # Strategy:
 # 1. Ignore empty trailing rows and columns.
-# 2. Diff the rows before the table only as rows.
+# 2. Diff the rows before the table only as lines.
 # 3. Each row is uniquely identified by the keys in the key column;
 # each column is uniquely identified by the headers in the header row.
 # 4. Detect added or deleted rows or columns by comparing the old
@@ -115,7 +110,6 @@ contains a marker indicating whether the row changed:
 # 1. Allow the table to specified (within
 # the spreadsheet) by specifying a range, such as: --table=B10:G16
 # 2. Optionally suppress unchanged rows and/or columns.
-
 
 import sys
 import os
@@ -325,7 +319,7 @@ def FindTable(wb, wantedTitle, key, file):
     # sys.stderr.write(f"[INFO] iHeaders: {iHeaders} file: '{file}'\n")
     # sys.stderr.write(f"[INFO] iTrailing: {iTrailing} file: '{file}'\n")
     # sys.stderr.write(f"[INFO] file: '{file}' rows: \n{repr(rows)} \n")
-    return (sheet, rows, iHeaders, iTrailing, key)
+    return (sheet, rows, iHeaders, iTrailing, jKey)
 
 ##################### RemoveTrailingEmpties #####################
 def RemoveTrailingEmpties(items):
@@ -370,7 +364,7 @@ def CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex):
         diffHeaders = Combined old and new headers
     '''
     # Headers are treated as column keys: they must be unique.
-    Warn(f"in CompareHeaders oldHeaders: {repr(oldHeaders)}")
+    # Warn(f"in CompareHeaders oldHeaders: {repr(oldHeaders)}")
     if '' in oldHeaders:
         iEmpty = next( (i for i in range(len(oldHeaders)) if oldHeaders[i] == ''), -1 )
         letter = openpyxl.utils.cell.get_column_letter(iEmpty+1)
@@ -406,16 +400,15 @@ def CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex):
     return diffHeaderMarks, diffHeaders
 
 ##################### CompareBody #####################
-def CompareBody(diffRows, diffHeaders, key, ignoreHeaders,
-        oldRows, oldHeaders, iOldHeaders, iOldTrailing, oldHeaderIndex, 
-        newRows, newHeaders, iNewHeaders, iNewTrailing, newHeaderIndex):
+def CompareBody(diffRows, diffHeaders, ignoreHeaders,
+        oldRows, oldHeaders, iOldHeaders, iOldTrailing, oldHeaderIndex, jOldKey,
+        newRows, newHeaders, iNewHeaders, iNewTrailing, newHeaderIndex, jNewKey):
     ''' Compare rows in the body of the table.  Modifies diffRows
     by appending diffRows for the table body.  The first cell of each diffRow 
     will be one of {=, -, +, c-, c+}.
     '''
     # Make lists of oldKeys and newKeys.
-    iOldKey = oldHeaderIndex[key]
-    oldKeys = [ oldRows[i][iOldKey] for i in range(iOldHeaders+1, iOldTrailing) ]
+    oldKeys = [ oldRows[i][jOldKey] for i in range(iOldHeaders+1, iOldTrailing) ]
     # oldKeyIndex will index directly into oldRows, which means that
     # the index is offset by iOldHeaders+1, to get past the leading lines
     # and the header row.
@@ -427,7 +420,6 @@ def CompareBody(diffRows, diffHeaders, key, ignoreHeaders,
         if v in oldKeyIndex:
             raise  ValueError(f"[ERROR] Table in oldFile contains a duplicate key on row {r+1}: '{v}'\n")
         oldKeyIndex[v] = r
-    jNewKey = newHeaderIndex[key]
     # sys.stderr.write(f"jNewKey: {jNewKey} iNewHeaders: {iNewHeaders} iNewTrailing: {iNewTrailing}\n")
     newKeys = [ newRows[i][jNewKey] for i in range(iNewHeaders+1, iNewTrailing) ]
     # newKeyIndex will index directly into newRows, which means that
@@ -533,7 +525,8 @@ def Die(s):
     sys.exit(1)
 
 ##################### CompareTables #####################
-def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, ignoreHeaders, command):
+def CompareTables(oldRows, iOldHeaders, iOldTrailing, jOldKey, 
+        newRows, iNewHeaders, iNewTrailing, jNewKey, ignoreHeaders, command):
     ''' Compare the old and new tables, and any leading or trailing rows.  
     Returns:
         diffRows = Rows of diff cells.  The first cell of each row is
@@ -554,10 +547,10 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNew
     # Old and new headers are treated as column keys: they must be unique.
     # And they must not contain any empty header.
     oldHeaders = oldRows[iOldHeaders]
-    Warn(f"oldHeaders: {repr(oldHeaders)}")
+    # Warn(f"oldHeaders: {repr(oldHeaders)}")
     oldHeaderIndex = { v: i for i, v in enumerate(oldHeaders) }
     newHeaders = newRows[iNewHeaders]
-    Warn(f"newHeaders: {repr(newHeaders)}")
+    # Warn(f"newHeaders: {repr(newHeaders)}")
     newHeaderIndex = { v: i for i, v in enumerate(newHeaders) }
     diffHeaderMarks, diffHeaders = CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex)
     # nDiffHeader does not include the marker column.
@@ -593,9 +586,9 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNew
         diffRows.append(diffRow)
     ###### Compare the table body rows.
     # Compare rows, excluding columns that were added or deleted.
-    CompareBody(diffRows, diffHeaders, key, ignoreHeaders,
-        oldRows, oldHeaders, iOldHeaders, iOldTrailing, oldHeaderIndex, 
-        newRows, newHeaders, iNewHeaders, iNewTrailing, newHeaderIndex)
+    CompareBody(diffRows, diffHeaders, ignoreHeaders,
+        oldRows, oldHeaders, iOldHeaders, iOldTrailing, oldHeaderIndex, jOldKey,
+        newRows, newHeaders, iNewHeaders, iNewTrailing, newHeaderIndex, jNewKey)
     iDiffTrailing = len(diffRows)
     ###### Compare trailing rows (after the table).
     CompareLeadingTrailingRows(diffRows, oldRows, iOldTrailing, len(oldRows), newRows, iNewTrailing, len(newRows), nDiffHeaders)
@@ -608,7 +601,8 @@ def Value(v):
     return '' if v is None else v
 
 ##################### AppendTable #####################
-def AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newSheet, newRows, iNewHeaders, iNewTrailing, key, outFile):
+def AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
+        newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey, outFile):
     ''' Append columns of new table to old table.
     Write the resulting spreadsheet to outFile.
     oldWb (and oldSheet) are modified in memory!
@@ -629,10 +623,6 @@ def AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newSheet, n
         outRow = oldRows[i].copy()
         outRow.extend(emptyNewRow)
         outRows.append(outRow)
-    # Find the key column in oldHeaders
-    jOldKey = next( j for j in range(len(oldHeaders)) if oldHeaders[j] == key )
-    # Find the key column in newHeaders
-    jNewKey = next( j for j in range(len(newHeaders)) if newHeaders[j] == key )
     # Make a newKeyIndex
     newKeyIndex = { newRows[i][jNewKey]: i for i in range(iNewHeaders+1, len(newRows)) }
     # Extend oldSheet with more columns (for newRows):
@@ -692,7 +682,8 @@ def AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newSheet, n
     sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
 
 ##################### MergeTable #####################
-def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newSheet, newRows, iNewHeaders, iNewTrailing, key, outFile, mergeHeaders):
+def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
+        newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey, outFile, mergeHeaders):
     ''' Merge specified columns of new table to old table,
     modifying oldWb/oldSheet in place (in memory).
     Write the resulting spreadsheet to outFile.
@@ -708,8 +699,6 @@ def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newSheet, ne
     newWsRows = tuple(newSheet.rows)
     # newKeyIndex will be used to look up rows in newRows.
     newKeyIndex = {}
-    jNewKey = next( j for j in range(len(newHeaders)) if newHeaders[j] == key )
-    jOldKey = next( j for j in range(len(oldHeaders)) if oldHeaders[j] == key )
     for i in range(iNewHeaders+1, iNewTrailing):
         v = newRows[i][jNewKey]
         if v == '':
@@ -777,7 +766,7 @@ def TrimSheet(sheet):
        raise AttributeError(str(e) + f"\n at row {cell.row} column {cell.column}")
 
 ##################### WriteDiffFile #####################
-def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, ignoreHeaders, outFile):
+def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, oldKey, ignoreHeaders, outFile):
     ''' Write the diffs to the outFile as XLSX, highlighting
     changed rows/columns/cells.
     '''
@@ -788,7 +777,7 @@ def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, ignoreH
         # At least one header changed from old to new, so we'll have
         # two header rows instead of one.
         newHeaders = diffRows[iDiffHeaders+1]
-    jKey = next( j for j in range(nColumns) if oldHeaders[j] == key )
+    jKey = next( j for j in range(nColumns) if oldHeaders[j] == oldKey )
     # Create the Excel spreadsheet and fill it with data.
     outWb = openpyxl.Workbook()
     outSheet = outWb.active
@@ -832,7 +821,7 @@ def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, ignoreH
             # Apply row fills first, so they'll be overridden
             # by column fills.
             for j in range(nColumns):
-                if oldHeaders[j] == key: 
+                if oldHeaders[j] == oldKey: 
                     wsRows[i][j].fill = fillKeyCol
                 if rowMark and rowFill:
                     wsRows[i][j].fill = rowFill
@@ -852,13 +841,18 @@ def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, ignoreH
 ##################### main #####################
 def main():
     # Parse command line options:
-    argParser = argparse.ArgumentParser(description='Parse AATS data dictionary artifacts')
+    global EXPLANATION
+    global EXAMPLES
+    argParser = argparse.ArgumentParser(
+        description='Compare tables in two .xlsx spreadsheets', 
+        epilog=EXPLANATION+EXAMPLES,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
     argParser.add_argument('--oldSheet',
-                    help='Specifies the sheet in oldFile to be compared.\n If no sheet is specified, the first sheet containing the\n specified header will be used.')
+                    help='Specifies the sheet in oldFile to be compared.  Default: the first sheet with a table with a KEY column.')
     argParser.add_argument('--newSheet',
-                    help='Specifies the sheet in newFile to be compared.\n If no sheet is specified, the first sheet containing the\n specified header will be used.')
+                    help='Specifies the sheet in newFile to be compared.  Default: the first sheet with a table with a KEY column.')
     argParser.add_argument('--sheet',
-                    help='Specifies the sheet to be compared, in both oldFile and newFile.\n If no sheet is specified, the first sheet containing the\n specified header will be used.')
+                    help='Specifies the sheet to be compared, in both oldFile and newFile.  Default: the first sheet with a table with a KEY column.')
     argParser.add_argument('--append', action='store_true',
                     help='Copy the values of oldFile sheet, appending columns of newFile.\n Rows of newFile that do not exist in oldFile are discarded, and leading and trailing rows\n of newFile (before and after the table) are also discarded.  The number of rows in the output file will be the same is in oldFile.')
     argParser.add_argument('--merge', nargs=1, action='extend',
@@ -866,13 +860,13 @@ def main():
     argParser.add_argument('--ignore', nargs=1, action='extend',
                     help='Ignore the specified column when comparing old and new table rows.  This option may be repeated to ignore multiple columns.  The specified column must exist in both old and new tables.')
     argParser.add_argument('--key',
-                    help='Specifies the name of the key column, i.e., its header')
-    argParser.add_argument('--out',
-                    help='Output file of differences.  This "option" is actually REQUIRED.', required=True)
+                    help='Specifies KEY as the name of the key column, i.e., its header.  If KEY is of the form "OLDKEY=NEWKEY" then OLDKEY and NEWKEY are the corresponding key columns of the old and new tables, respectively.')
     argParser.add_argument('oldFile', metavar='oldFile.xlsx', type=str,
                     help='Old spreadsheet (*.xlsx)')
     argParser.add_argument('newFile', metavar='newFile.xlsx', type=str,
                     help='New spreadsheet (*.xlsx)')
+    argParser.add_argument('--out',
+                    help='Output file of differences.  This "option" is actually REQUIRED.', required=True)
     # sys.stderr.write(f"[INFO] calling print_using....\n")
     args = argParser.parse_args()
     if args.sheet and args.oldSheet:
@@ -885,24 +879,38 @@ def main():
         oldSheetTitle = args.oldSheet
     if args.newSheet:
         newSheetTitle = args.newSheet
-    key = None
+    oldKey = None
+    newKey = None
     if args.key:
-        key = args.key
+        oldNewKeys = [ k.strip() for k in args.key.split("=") ]
+        if len(oldNewKeys) > 2:
+            sys.stderr.write(f"[ERROR] Too many keys specified: '--key {args.key}'\n")
+            sys.exit(1)
+        oldKey = oldNewKeys[0]
+        newKey = oldNewKeys[0]
+        if len(oldNewKeys) > 1:
+            newKey = oldNewKeys[1]
+        if oldKey == '' or newKey == '':
+            sys.stderr.write(f"[ERROR] Key must not be empty: '--key {args.key}'\n")
+            sys.exit(1)
     outFile = args.out
     if not outFile:
         sys.stderr.write("[ERROR] Output filename must be specified: --out=outFile.xlsx\n")
         sys.stderr.write(Usage())
         sys.exit(1)
+    if outFile == args.oldFile or outFile == args.newFile:
+        sys.stderr.write(f"[ERROR] Output filename must differ from newFile and oldFile: {outFile}\n")
+        sys.exit(1)
     # sys.stderr.write("args: \n" + repr(args) + "\n\n")
     oldWb = LoadWorkBook(args.oldFile, data_only=False)
     # These will be rows of values-only:
-    (oldSheet, oldRows, iOldHeaders, iOldTrailing, key) = FindTable(oldWb, oldSheetTitle, key, args.oldFile)
+    (oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey) = FindTable(oldWb, oldSheetTitle, oldKey, args.oldFile)
     TrimSheet(oldSheet)
     oldTitle = oldSheet.title
     if iOldHeaders is None:
         raise ValueError(f"[ERROR] Could not find header row in newFile: '{args.oldFile}'")
     newWb = LoadWorkBook(args.newFile, data_only=False)
-    (newSheet, newRows, iNewHeaders, iNewTrailing, key) = FindTable(newWb, newSheetTitle, key, args.newFile)
+    (newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey) = FindTable(newWb, newSheetTitle, newKey, args.newFile)
     TrimSheet(newSheet)
     newTitle = newSheet.title
     if iNewHeaders is None:
@@ -926,20 +934,23 @@ def main():
                 sys.stderr.write(f"[ERROR] Column specified in --merge='{h}' does not exist in new table.\n")
                 sys.exit(1)
             mergeHeaders.add(h)
-        MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newSheet, newRows, iNewHeaders, iNewTrailing, key, outFile, mergeHeaders)
+        MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
+            newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey, outFile, mergeHeaders)
         sys.exit(0)
     if args.append:
-        AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, newSheet, newRows, iNewHeaders, iNewTrailing, key, outFile)
+        AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
+            newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey, outFile)
         sys.exit(0)
     ignoreHeaders = args.ignore if args.ignore else []
     # command will be the command string to echo in the first row output.
     command = ''
-    if 1:
-        argv = sys.argv.copy()
-        argv[0] = os.path.basename(argv[0])
-        command = " ".join(argv)
-    diffRows, iDiffHeaders, iDiffBody, iDiffTrailing = CompareTables(oldRows, iOldHeaders, iOldTrailing, newRows, iNewHeaders, iNewTrailing, key, ignoreHeaders, command)
-    WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, key, ignoreHeaders, outFile)
+    argv = sys.argv.copy()
+    argv[0] = os.path.basename(argv[0])
+    command = " ".join(argv)
+    diffRows, iDiffHeaders, iDiffBody, iDiffTrailing = CompareTables(oldRows, iOldHeaders, iOldTrailing, jOldKey,
+        newRows, iNewHeaders, iNewTrailing, jNewKey, ignoreHeaders, command)
+    oldKey = oldRows[iOldHeaders][jOldKey]
+    WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, oldKey, ignoreHeaders, outFile)
     sys.exit(0)
 
 
