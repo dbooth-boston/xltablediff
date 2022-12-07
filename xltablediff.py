@@ -121,6 +121,17 @@ import json
 import keyword
 import argparse
 
+##################### Globals #####################
+fillChange =    PatternFill("solid", fgColor="FFFFAA")
+fillChangeRow = PatternFill("solid", fgColor="FFFFDD")
+fillDelRow =    PatternFill("solid", fgColor="FFB6C1")
+fillAddRow =    PatternFill("solid", fgColor="B6FFC1")
+fillDelCol =    PatternFill("solid", fgColor="FFDDE2")
+# fillAddCol =    PatternFill("solid", fgColor="DDFFE2")
+fillAddCol =    PatternFill("solid", fgColor="CCFFC2")
+fillKeyCol =    PatternFill("solid", fgColor="E8E8FF")
+fillIgnore =    PatternFill("solid", fgColor="E0E0E0")
+
 ##################### NoTabs #####################
 def NoTabs(rows):
     ''' Change tabs to spaces in all cells.
@@ -237,7 +248,7 @@ def LoadWorkBook(file, data_only=True):
     return wb
 
 ##################### FindTable #####################
-def FindTable(wb, wantedTitle, key, file):
+def FindTable(wb, wantedTitle, key, file, maxColumns):
     ''' Read a workbook wb and possible a wantedTitle, find the desired table.
     Raises an exception if the table is not found.
     Returns a tuple:
@@ -266,6 +277,7 @@ def FindTable(wb, wantedTitle, key, file):
             else:
                 # sys.stderr.write(f"[INFO] Skipping unwanted sheet: '{s.title}'\n")
                 continue
+        TrimSheet(s, maxColumns, file)
         # Get the rows of cells:
         rows = [ [str(Value(v)).strip() for v in valuesRow] for valuesRow in s.values ]
         # sys.stderr.write(f"[INFO] file: '{file}' c.value rows: \n{repr(rows)} \n")
@@ -614,11 +626,11 @@ def AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
     oldCellRows = tuple(oldSheet.rows)
     newCellRows = tuple(newSheet.rows)
     nOldColumns = len(oldHeaders)
-    nNewColumns = len(newHeaders)
+    nNewHeaders = len(newHeaders)
     # Copy oldRows from the beginning through the headers. 
     outRows = []
-    emptyNewRow = [ '' for j in range(len(newHeaders)) ]
-    emptyNewCellRow = [ None for j in range(len(newHeaders)) ]
+    emptyNewRow = [ '' for j in range(nNewHeaders) ]
+    emptyNewCellRow = [ None for j in range(nNewHeaders) ]
     for i in range(iOldHeaders):
         outRow = oldRows[i].copy()
         outRow.extend(emptyNewRow)
@@ -626,8 +638,8 @@ def AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
     # Make a newKeyIndex
     newKeyIndex = { newRows[i][jNewKey]: i for i in range(iNewHeaders+1, len(newRows)) }
     # Extend oldSheet with more columns (for newRows):
-    # sys.stderr.write(f"[INFO] nOldColumns: '{repr(nOldColumns)} nNewColumns: '{repr(nNewColumns)}'\n")
-    oldSheet.insert_cols(nOldColumns+1, nNewColumns)
+    # sys.stderr.write(f"[INFO] nOldColumns: '{repr(nOldColumns)} nNewHeaders: '{repr(nNewHeaders)}'\n")
+    oldSheet.insert_cols(nOldColumns+1, nNewHeaders)
     newCellRows = tuple(newSheet.rows)
     # Copy oldRows, appending newRows that exist
     for i in range(iOldHeaders, iOldTrailing):
@@ -637,10 +649,11 @@ def AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
         k = outRow[jOldKey]
         if i == iOldHeaders:
             newRow = newHeaders
-            newCellRow = [ newCellRows[iNewHeaders][j].value for j in range(nNewColumns) ]
+            newCellValues = [ c.value for c in newCellRows[iNewHeaders] ]
+            newCellRow = [ newCellRows[iNewHeaders][j].value for j in range(nNewHeaders) ]
         elif k in newKeyIndex:
             newRow = newRows[newKeyIndex[k]]
-            newCellRow = [ newCellRows[newKeyIndex[k]][j].value for j in range(nNewColumns) ]
+            newCellRow = [ newCellRows[newKeyIndex[k]][j].value for j in range(nNewHeaders) ]
         outRow.extend(newRow)
         outRows.append(outRow)
         # sys.stderr.write(f"[INFO] newCellRow: '{repr(newCellRow)}'\n")
@@ -659,8 +672,7 @@ def AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
         for outRow in outRows:
             outSheet.append(outRow)
     # Highlight the new columns.
-    fillAddCol =    PatternFill("solid", fgColor="DDFFE2")
-    nTotalColumns = nOldColumns + nNewColumns
+    nTotalColumns = nOldColumns + nNewHeaders
     if 0:
         wsRows = tuple(outSheet.rows)
         # Determine how many columns are needed.
@@ -693,8 +705,6 @@ def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
     # sys.stderr.write(f"[INFO] MergeTable n columns in oldHeaders: '{len(oldHeaders)}'\n")
     # sys.stderr.write(f"[INFO] MergeTable n columns in oldSheet: '{len(list(oldSheet.rows)[0])}'\n")
     # Prepare to highlight the new columns.
-    fillAddCol = PatternFill("solid", fgColor="CCFFC2")
-    fillChange = PatternFill("solid", fgColor="FFFFAA")
     oldWsRows = tuple(oldSheet.rows)
     newWsRows = tuple(newSheet.rows)
     # newKeyIndex will be used to look up rows in newRows.
@@ -735,35 +745,79 @@ def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
     oldWb.save(outFile)
     sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
 
+##################### FirstNonEmpty #####################
+def FirstNonEmpty(cellList):
+    ''' Return the 0-based index of the first non-empty cell, or -1.
+    Only cell values are examined, as strings.
+    '''
+    iUsed = next( (i for i in range(len(cellList)) if str(Value(cellList[i].value)).strip()  != ''), -1)
+    return iUsed
+
 ##################### TrimSheet #####################
-def TrimSheet(sheet):
+def TrimSheet(sheet, maxColumns, filename):
     ''' Modifies the sheet in place, by trimming empty trailing 
     rows and columns.
     '''
     rows = list(sheet.rows)
-    columns = list(sheet.columns)
     nRows = len(rows)
+    columns = list(sheet.columns)
     nColumns = len(columns)
-    # sys.stderr.write(f"Trimming empty rows and columns. nRows: {nRows} nColumns: {nColumns} ...\n")
+    oldNColumns = nColumns
+    oldNRows = nRows
+    if maxColumns and maxColumns < sheet.max_column:
+        sys.stderr.write(f"[INFO] File '{filename}' sheet '{sheet.title}': Deleting {sheet.max_column-maxColumns} columns due to '--maxColumns={maxColumns}'\n")
+        # Warn if non-empty columns are found in the next two
+        # columns after maxColumns:
+        for j in range(maxColumns, maxColumns+2):
+            if j >= sheet.max_column: break
+            column = columns[j]
+            # iUsed = next( (i for i in range(nRows) if str(Value(column[i].value)).strip()  != ''), -1)
+            iUsed = FirstNonEmpty(column)
+            if iUsed >= 0:
+                letter = openpyxl.utils.cell.get_column_letter(iUsed+1)
+                sys.stderr.write(f"[WARNING] File '{filename}' sheet '{sheet.title}': Deleting column {j+1} ({letter}) with non-empty data\n")
+                break
+        sheet.delete_cols(maxColumns, sheet.max_column-maxColumns)
+        # Get these again, in case they changed:
+        columns = list(sheet.columns)
+        nColumns = len(columns)
+        rows = list(sheet.rows)
+        nRows = len(rows)
+    if nColumns > 100 and not maxColumns:
+        sys.stderr.write(f"[WARNING] File '{filename}' sheet '{sheet.title}' has a large number of columns: {nColumns}.\n Trimming empty trailing columns may take a long time\n If you are certain that no more than N columns are used in any sheet, you can\n specify the '--maxColumns=N' option (where N is an integer) to delete\n all extra columns.")
+    # sys.stderr.write(f"Trimming empty rows and columns. oldNRows: {oldNRows} oldNColumns: {oldNColumns} nRows: {nRows} nColumns: {nColumns} ...\n")
     try:
         # Delete empty trailing rows:
         while nRows > 0:
             row = rows[nRows-1]
-            jUsed = next( (j for j in range(nColumns) if Value(row[j].value).strip()  != ''), -1)
-            if jUsed < 0: break
+            # jUsed = next( (j for j in range(nColumns) if str(Value(row[j].value)).strip()  != ''), -1)
+            jUsed = FirstNonEmpty(row)
+            if jUsed >= 0: break
+            # sys.stderr.write(f"Trimming empty row: {nRows}\n")
             sheet.delete_rows(nRows)
             nRows -= 1
         if nRows == 0: nColumns = 0
+    except AttributeError as e:
+       raise AttributeError(str(e) + f"\n at sheet '{sheet.title}' row {nRows}")
+    try:
         # Delete empty trailing columns:
+        warned = False
         while nColumns > 0:
             column = columns[nColumns-1]
-            iUsed = next( (i for i in range(nColumns) if Value(column[i].value).strip()  != ''), -1)
-            if iUsed < 0: break
+            # iUsed = next( (i for i in range(nRows) if str(Value(column[i].value)).strip()  != ''), -1)
+            iUsed = FirstNonEmpty(column)
+            if iUsed >= 0: break
+            # sys.stderr.write(f"Trimming empty column: {nColumns}\n")
             sheet.delete_cols(nColumns)
             nColumns -= 1
-        # sys.stderr.write(f"Done trimming. nRows: {nRows} nColumns: {nColumns} ...\n")
+            if oldNColumns-nColumns >= 10 and nColumns >= 100 and not warned:
+                sys.stderr.write(f"[WARNING] '{filename}' sheet '{sheet.title}': Trimming empty trailing columns from {oldNColumns} columns.\n If this takes too long, consider the '--maxColumns=N' option ...\n")
+                warned = True
+        if nRows != oldNRows or nColumns != oldNColumns:
+            sys.stderr.write(f"[INFO] File '{filename}' sheet '{sheet.title}': Trimmed {oldNRows-nRows} empty trailing rows and {oldNColumns-nColumns} columns\n")
     except AttributeError as e:
-       raise AttributeError(str(e) + f"\n at row {cell.row} column {cell.column}")
+       raise AttributeError(str(e) + f"\n at sheet '{sheet.title}' column {nColumns}")
+    # sys.stderr.write(f"[INFO] Copying header len: '{repr(len(newCellRows[iNewHeaders]))} nNewHeaders: '{repr(nNewHeaders)}'\n newCellValue Headers: {repr(newCellValues)}\n newHeaders: {repr(newHeaders)}\n")
 
 ##################### WriteDiffFile #####################
 def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, oldKey, ignoreHeaders, outFile):
@@ -785,13 +839,7 @@ def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, oldKey, igno
     for diffRow in diffRows:
         outSheet.append(diffRow)
     # Make a new workbook and copy the table into it.
-    fillChangeRow = PatternFill("solid", fgColor="FFFFDD")
-    fillDelRow =    PatternFill("solid", fgColor="FFB6C1")
-    fillAddRow =    PatternFill("solid", fgColor="B6FFC1")
-    fillDelCol =    PatternFill("solid", fgColor="FFDDE2")
-    fillAddCol =    PatternFill("solid", fgColor="DDFFE2")
-    fillKeyCol =    PatternFill("solid", fgColor="E8E8FF")
-    fillIgnore =    PatternFill("solid", fgColor="E0E0E0")
+
     # Determine column highlights for added/deleted columns. 
     # colFills will highlight added or deleted columns.
     colFills = [ None for j in range(nColumns) ]
@@ -847,20 +895,22 @@ def main():
         description='Compare tables in two .xlsx spreadsheets', 
         epilog=EXPLANATION+EXAMPLES,
         formatter_class=argparse.RawDescriptionHelpFormatter)
+    argParser.add_argument('--key',
+                    help='Specifies KEY as the name of the key column, i.e., its header.  If KEY is of the form "OLDKEY=NEWKEY" then OLDKEY and NEWKEY are the corresponding key columns of the old and new tables, respectively.')
     argParser.add_argument('--oldSheet',
                     help='Specifies the sheet in oldFile to be compared.  Default: the first sheet with a table with a KEY column.')
     argParser.add_argument('--newSheet',
                     help='Specifies the sheet in newFile to be compared.  Default: the first sheet with a table with a KEY column.')
     argParser.add_argument('--sheet',
                     help='Specifies the sheet to be compared, in both oldFile and newFile.  Default: the first sheet with a table with a KEY column.')
+    argParser.add_argument('--ignore', nargs=1, action='extend',
+                    help='Ignore the specified column when comparing old and new table rows.  This option may be repeated to ignore multiple columns.  The specified column must exist in both old and new tables.')
     argParser.add_argument('--append', action='store_true',
                     help='Copy the values of oldFile sheet, appending columns of newFile.\n Rows of newFile that do not exist in oldFile are discarded, and leading and trailing rows\n of newFile (before and after the table) are also discarded.  The number of rows in the output file will be the same is in oldFile.')
     argParser.add_argument('--merge', nargs=1, action='extend',
                     help='Output a copy of the old sheet, with values from the specifed MERGE column from the new table merged in.  This option may be repeated to merge more than one column.  The number of rows in the output file will be the same is in oldFile.')
-    argParser.add_argument('--ignore', nargs=1, action='extend',
-                    help='Ignore the specified column when comparing old and new table rows.  This option may be repeated to ignore multiple columns.  The specified column must exist in both old and new tables.')
-    argParser.add_argument('--key',
-                    help='Specifies KEY as the name of the key column, i.e., its header.  If KEY is of the form "OLDKEY=NEWKEY" then OLDKEY and NEWKEY are the corresponding key columns of the old and new tables, respectively.')
+    argParser.add_argument('--maxColumns', type=int,
+                    help='Delete all columns after column N, where N is an integer (origin 1)')
     argParser.add_argument('oldFile', metavar='oldFile.xlsx', type=str,
                     help='Old spreadsheet (*.xlsx)')
     argParser.add_argument('newFile', metavar='newFile.xlsx', type=str,
@@ -901,22 +951,22 @@ def main():
     if outFile == args.oldFile or outFile == args.newFile:
         sys.stderr.write(f"[ERROR] Output filename must differ from newFile and oldFile: {outFile}\n")
         sys.exit(1)
+    maxColumns = 0
+    if args.maxColumns: maxColumns = args.maxColumns
     # sys.stderr.write("args: \n" + repr(args) + "\n\n")
     oldWb = LoadWorkBook(args.oldFile, data_only=False)
     # These will be rows of values-only:
-    (oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey) = FindTable(oldWb, oldSheetTitle, oldKey, args.oldFile)
-    TrimSheet(oldSheet)
+    (oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey) = FindTable(oldWb, oldSheetTitle, oldKey, args.oldFile, maxColumns)
     oldTitle = oldSheet.title
     if iOldHeaders is None:
         raise ValueError(f"[ERROR] Could not find header row in newFile: '{args.oldFile}'")
+    sys.stderr.write(f"[INFO] In '{args.oldFile}' sheet '{oldTitle}' found table in rows {iOldHeaders+1}-{iOldTrailing} columns 1-{len(oldRows[0])}\n")
     newWb = LoadWorkBook(args.newFile, data_only=False)
-    (newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey) = FindTable(newWb, newSheetTitle, newKey, args.newFile)
-    TrimSheet(newSheet)
+    (newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey) = FindTable(newWb, newSheetTitle, newKey, args.newFile, maxColumns)
     newTitle = newSheet.title
     if iNewHeaders is None:
         raise ValueError(f"[ERROR] Could not find header row in newFile: '{args.newFile}'")
-    sys.stderr.write(f"[INFO] Old table rows: {iOldHeaders+1}-{iOldTrailing} file: '{args.oldFile}' sheet: '{oldTitle}'\n")
-    sys.stderr.write(f"[INFO] New table rows: {iNewHeaders+1}-{iNewTrailing} file: '{args.newFile}' sheet: '{newTitle}'\n")
+    sys.stderr.write(f"[INFO] In '{args.newFile}' sheet '{newTitle}' found table in rows {iNewHeaders+1}-{iNewTrailing} columns 1-{len(newRows[0])}\n")
     if args.append and args.merge:
         sys.stderr.write(f"[ERROR] Options --append and --merge cannot be used together.\n")
         sys.exit(1)
