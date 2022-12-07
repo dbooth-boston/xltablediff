@@ -120,6 +120,7 @@ import re
 import json
 import keyword
 import argparse
+import copy
 
 ##################### Globals #####################
 fillChange =    PatternFill("solid", fgColor="FFFFAA")
@@ -619,77 +620,55 @@ def AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
     Write the resulting spreadsheet to outFile.
     oldWb (and oldSheet) are modified in memory!
     '''
-    oldHeaders = oldRows[iOldHeaders]
-    newHeaders = newRows[iNewHeaders]
-    d = oldSheet.calculate_dimension()
-    d = newSheet.calculate_dimension()
+    # Get the old and new headers
     oldCellRows = tuple(oldSheet.rows)
     newCellRows = tuple(newSheet.rows)
-    nOldColumns = len(oldHeaders)
-    nNewHeaders = len(newHeaders)
-    # Copy oldRows from the beginning through the headers. 
-    outRows = []
-    emptyNewRow = [ '' for j in range(nNewHeaders) ]
-    emptyNewCellRow = [ None for j in range(nNewHeaders) ]
-    for i in range(iOldHeaders):
-        outRow = oldRows[i].copy()
-        outRow.extend(emptyNewRow)
-        outRows.append(outRow)
-    # Make a newKeyIndex
-    newKeyIndex = { newRows[i][jNewKey]: i for i in range(iNewHeaders+1, len(newRows)) }
+    oldHeaderCells = oldCellRows[iOldHeaders]   # Tuple
+    newHeaderCells = newCellRows[iNewHeaders]   # Tuple
+    nOldHeaders = len(oldHeaderCells)
+    nNewHeaders = len(newHeaderCells)
     # Extend oldSheet with more columns (for newRows):
-    # sys.stderr.write(f"[INFO] nOldColumns: '{repr(nOldColumns)} nNewHeaders: '{repr(nNewHeaders)}'\n")
-    oldSheet.insert_cols(nOldColumns+1, nNewHeaders)
-    newCellRows = tuple(newSheet.rows)
-    # Copy oldRows, appending newRows that exist
-    for i in range(iOldHeaders, iOldTrailing):
-        outRow = oldRows[i].copy()
-        newRow = emptyNewRow
-        newCellRow = emptyNewCellRow
-        k = outRow[jOldKey]
-        if i == iOldHeaders:
-            newRow = newHeaders
-            newCellValues = [ c.value for c in newCellRows[iNewHeaders] ]
-            newCellRow = [ newCellRows[iNewHeaders][j].value for j in range(nNewHeaders) ]
-        elif k in newKeyIndex:
-            newRow = newRows[newKeyIndex[k]]
-            newCellRow = [ newCellRows[newKeyIndex[k]][j].value for j in range(nNewHeaders) ]
-        outRow.extend(newRow)
-        outRows.append(outRow)
-        # sys.stderr.write(f"[INFO] newCellRow: '{repr(newCellRow)}'\n")
-        for j, v in enumerate(newCellRow):
-            c = oldSheet.cell(i+1, nOldColumns+j+1, newCellRow[j])
-            # sys.stderr.write(f"[INFO] nOldColumns: '{repr(nOldColumns)} j: '{repr(j)}'\n")
-    # Copy trailing oldRows
-    for i in range(iOldTrailing, len(oldRows)):
-        outRow = oldRows[i].copy()
-        outRow.extend(emptyNewRow)
-        outRows.append(outRow)
-    # Create the output spreadsheet and fill it with data.
-    if 0:
-        outWb = openpyxl.Workbook()
-        outSheet = outWb.active
-        for outRow in outRows:
-            outSheet.append(outRow)
-    # Highlight the new columns.
-    nTotalColumns = nOldColumns + nNewHeaders
-    if 0:
-        wsRows = tuple(outSheet.rows)
-        # Determine how many columns are needed.
-        nTotalColumns = len(oldHeaders) + len(newHeaders)
-        for i in range(iOldHeaders, iOldTrailing):
-            outRow = outRows[i]
-            for j in range(nOldColumns, nTotalColumns):
-                wsRows[i][j].fill = fillAddCol
+    # sys.stderr.write(f"[INFO] nOldHeaders: '{repr(nOldHeaders)} nNewHeaders: '{repr(nNewHeaders)}'\n")
+    oldSheet.insert_cols(nOldHeaders+1, nNewHeaders)
+    d = oldSheet.calculate_dimension()
+    nTotalColumns = nOldHeaders + nNewHeaders
+    # Set this again, in case they changed from adding columns:
     oldCellRows = tuple(oldSheet.rows)
+    oldHeaderCells = oldCellRows[iOldHeaders]   # Tuple
+    # Get the old and new key columns
+    oldCellColumns = tuple(oldSheet.columns)
+    newCellColumns = tuple(newSheet.columns)
+    oldKeyColumn = oldCellColumns[jOldKey]
+    newKeyColumn = newCellColumns[jNewKey]
+    # Make a newKeyIndex, to look up new rows from old keys
+    newKeyIndex = { newKeyColumn[i].value: i for i in range(iNewHeaders+1, iNewTrailing) }
+    # Copy existing newRows into oldRows
+    emptyNewCellRowValues = [ None for j in range(nNewHeaders) ]
+    emptyNewCellRowFills = [ fillAddRow for j in range(nNewHeaders) ]
     for i in range(iOldHeaders, iOldTrailing):
-        oldCellRow = oldCellRows[i]
-        for j in range(nOldColumns, nTotalColumns):
-            oldCellRow[j].fill = fillAddCol
+        newCellRowValues = emptyNewCellRowValues
+        newCellRowFills = emptyNewCellRowFills
+        k = oldKeyColumn[i].value
+        assert k is not None
+        if i == iOldHeaders:
+            newCellRowValues = [ c.value for c in newHeaderCells ]
+            newCellRowFills  = [ copy.copy(c.fill)  for c in newHeaderCells ]
+        elif k in newKeyIndex:
+            newCellRow = newCellRows[newKeyIndex[k]]
+            newCellRowValues = [ newCellRow[j].value for j in range(nNewHeaders) ]
+            newCellRowFills  = [ copy.copy(newCellRow[j].fill) for j in range(nNewHeaders) ]
+        assert len(newCellRowValues) == len(newCellRowFills)
+        assert len(newCellRowValues) == nNewHeaders
+        # sys.stderr.write(f"[INFO] newCellRow: '{repr(newCellRow)}'\n")
+        # sys.stderr.write(f"[DEBUG] len newCellRowFills: '{len(newCellRowFills)} newCellRowFills: '{repr(newCellRowFills)}'\n")
+        for j, v in enumerate(newCellRowValues):
+            c = oldSheet.cell(i+1, nOldHeaders+j+1, v)
+            # sys.stderr.write(f"[DEBUG] c: '{repr(c)} j: '{repr(j)} newCellRowFills[j]: '{repr(newCellRowFills[j])}'\n")
+            c.fill = newCellRowFills[j]
+            # c.fill = fillAddRow
+            # sys.stderr.write(f"[INFO] nOldHeaders: '{repr(nOldHeaders)} j: '{repr(j)}'\n")
     # Write the output file
-    # outSheet.title += '-Appended'
     oldSheet.title += '-Appended'
-    # outWb.save(outFile)
     oldWb.save(outFile)
     sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
 
