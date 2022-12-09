@@ -888,6 +888,8 @@ def main():
                     help='Copy the values of oldFile sheet, appending columns of newFile.\n Rows of newFile that do not exist in oldFile are discarded, and leading and trailing rows\n of newFile (before and after the table) are also discarded.  The number of rows in the output file will be the same is in oldFile.')
     argParser.add_argument('--merge', nargs=1, action='extend',
                     help='Output a copy of the old sheet, with values from the specifed MERGE column from the new table merged in.  This option may be repeated to merge more than one column.  The number of rows in the output file will be the same is in oldFile.')
+    argParser.add_argument('--mergeAll', action='store_true',
+                    help="Same as '--merge C' for all non-key columns C that are in both the old and new tables.")
     argParser.add_argument('--maxColumns', type=int,
                     help='Delete all columns after column N, where N is an integer (origin 1)')
     argParser.add_argument('oldFile', metavar='oldFile.xlsx', type=str,
@@ -949,20 +951,31 @@ def main():
     if args.append and args.merge:
         sys.stderr.write(f"[ERROR] Options --append and --merge cannot be used together.\n")
         sys.exit(1)
-    if args.merge:
+    if args.mergeAll or args.merge:
+        if args.mergeAll and args.merge:
+            sys.stderr.write(f"[ERROR] Options --mergeAll and --merge cannot be used together\n")
+            sys.exit(1)
         # sys.stderr.write(f"args.merge: {repr(args.merge)}\n")
         oldHeadersSet = set(oldRows[iOldHeaders])
         newHeadersSet = set(newRows[iNewHeaders])
         mergeHeaders = set()
-        for h in args.merge:
-            # sys.stderr.write(f"h: {repr(h)}\n")
-            if (h not in oldHeadersSet):
-                sys.stderr.write(f"[ERROR] Column specified in --merge='{h}' does not exist in old table.\n")
-                sys.exit(1)
-            if (h not in newHeadersSet):
-                sys.stderr.write(f"[ERROR] Column specified in --merge='{h}' does not exist in new table.\n")
-                sys.exit(1)
-            mergeHeaders.add(h)
+        if args.mergeAll:
+            oldNonKeys = oldHeadersSet.difference(set([oldKey]))
+            newNonKeys = newHeadersSet.difference(set([newKey]))
+            mergeHeaders = oldNonKeys.intersection(newNonKeys)
+        else:
+            for h in args.merge:
+                # sys.stderr.write(f"h: {repr(h)}\n")
+                if h == oldKey or h == newKey:
+                    sys.stderr.write(f"[ERROR] Key columns cannot be merged: --merge={'h'}\n")
+                    sys.exit(1)
+                if (h not in oldHeadersSet):
+                    sys.stderr.write(f"[ERROR] Column specified in --merge='{h}' does not exist in old table.\n")
+                    sys.exit(1)
+                if (h not in newHeadersSet):
+                    sys.stderr.write(f"[ERROR] Column specified in --merge='{h}' does not exist in new table.\n")
+                    sys.exit(1)
+                mergeHeaders.add(h)
         MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
             newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey, outFile, mergeHeaders)
         sys.exit(0)
