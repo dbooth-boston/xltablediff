@@ -15,10 +15,8 @@
 # The old and new tables must both have a key column of
 # the same name, which is specified by the --key option.  
 #
-# Optionally, columns from the new table can be merged into the
-# old table (using the --merge=MERGE_COLUMN option), or columns
-# from the new table can be appended to the old table (using
-# the --append option).
+# Optionally, columns from the new table can be merged or appended into the
+# old table (using the --merge, --oldAppend or --newAppend options).
 #
 # Run './xltablediff.py --help' for options and usage info.
 
@@ -26,17 +24,20 @@
 EXAMPLES = '''
 EXAMPLES
 
-# Diff test:  
+# Diff test:
   xltablediff.py  --key ID test1old.xlsx test1new.xlsx --out test1diff.xlsx
 
-# Ignore test:  
+# Ignore test:
   xltablediff.py  --key ID --ignore Color test1old.xlsx test1new.xlsx --out test1ignore.xlsx
 
-# Merge test:  
+# Merge test:
   xltablediff.py  --key ID --merge Color test1old.xlsx test1new.xlsx --out test1merge.xlsx
 
-# Append test:  
-  xltablediff.py  --key ID --append test1old.xlsx test1new.xlsx --out test1append.xlsx
+# oldAppend test:
+  xltablediff.py  --key ID --oldAppend test1old.xlsx test1new.xlsx --out test1oldAppend.xlsx
+
+# newAppend test:
+  xltablediff.py  --key ID --newAppend test1old.xlsx test1new.xlsx --out test1newAppend.xlsx
 '''
 
 EXPLANATION = '''
@@ -118,6 +119,8 @@ import openpyxl
 from openpyxl.styles import PatternFill, Fill, Font
 import re
 import json
+import pprint
+import inspect
 import keyword
 import argparse
 import copy
@@ -613,10 +616,114 @@ def Value(v):
     '''
     return '' if v is None else v
 
-##################### AppendTable #####################
-def AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
-        newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey, outFile):
+##################### CopyCellAttributes #####################
+def CopyCellAttributes(toCell, fromCell):
+    ''' Copy openpyxl cell attributes fromCell toCell.
+    '''
+    # For some unknown reason, 'style' messes up date formats
+    # and fills if it is set *after* setting number_format.
+    # IDK if it does anything if it is set before, but here it is.
+    toCell.style = copy.copy(fromCell.style)
+    toCell.fill = copy.copy(fromCell.fill)
+    toCell.font = copy.copy(fromCell.font)
+    toCell.number_format = copy.copy(fromCell.number_format)
+
+##################### NewAppendTable #####################
+def NewAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
+        newSheet, iNewHeaders, iNewTrailing, jNewKey, outFile):
     ''' Append columns of new table to old table.
+    newRows take priority: 
+    oldRows that do not exist in newRows are discarded, and
+    newRows that do not exist in oldRows are added, with
+    the key from newRows.
+    Write the resulting spreadsheet to outFile.
+    '''
+    # The strategy is to make a new worksheet having the resulting rows
+    # (from newRows) that we want, and then call OldAppendTable to
+    # fill it in and write it out.
+    outWb = openpyxl.Workbook()
+    outWb.iso_dates = True
+    outSheet = outWb.active
+    oldCellRows = tuple(oldSheet.rows)
+    newCellRows = tuple(newSheet.rows)
+    nOldRows = len(oldCellRows)
+    nNewRows = len(newCellRows)
+    oldHeaderCells = oldCellRows[iOldHeaders]   # Tuple
+    newHeaderCells = newCellRows[iNewHeaders]   # Tuple
+    nOldHeaders = len(oldHeaderCells)
+    nNewHeaders = len(newHeaderCells)
+    ##### First copy all oldRows before the table body
+    # iOut is the 0-based row index in outSheet where we'll be writing:
+    iOut = 0
+    for iOld in range(iOldHeaders+1):
+        for jOld in range(nOldHeaders):
+            oldCell = oldSheet.cell(iOld+1, jOld+1)
+            c = outSheet.cell(iOut+1, jOld+1, copy.copy(oldCell.value))
+            CopyCellAttributes(c, oldCell)
+        iOut += 1
+    iOutHeaders = iOut-1
+    assert( iOutHeaders == iOldHeaders )
+    ##### Make a new row for any initial newRows that are not in oldRows:
+    oldKeyIndex = { oldSheet.cell(i+1, jOldKey+1).value: i for i in range(iOldHeaders+1, iOldTrailing) }
+    newKeyIndex = { newSheet.cell(i+1, jNewKey+1).value: i for i in range(iNewHeaders+1, iNewTrailing) }
+    for iNew in range(iNewHeaders+1, iNewTrailing):
+        kNew = newSheet.cell(iNew+1, jNewKey+1).value
+        if kNew in oldKeyIndex: break
+        # sys.stderr.write(f"Making row for kNew: {repr(kNew)}\n")
+        # kNew is not in oldRows.  Make a new row for it.
+        for jOld in range(nOldHeaders):
+            v = ''
+            if jOld == jOldKey: v = kNew
+            c = outSheet.cell(iOut+1, jOld+1, v)
+            c.fill = fillAddRow
+        iOut += 1
+    ##### Found the first shared row.  
+    # Now, starting with the first oldRow that is also in newRows,
+    # copy oldRows that are also in newRows, but keep them in the
+    # oldRows order.
+    for iOld in range(iOldHeaders+1, iOldTrailing):
+        kOld = oldSheet.cell(iOld+1, jOldKey+1).value
+        # Ignore oldRows that are not in newRows:
+        if kOld not in newKeyIndex: continue
+        # This row is in both.  Copy it.
+        for jOld in range(nOldHeaders):
+            oldCell = oldSheet.cell(iOld+1, jOld+1)
+            c = outSheet.cell(iOut+1, jOld+1, copy.copy(oldCell.value))
+            CopyCellAttributes(c, oldCell)
+        iOut += 1
+        # Now make a new row for each following newRow that is not in oldRows.
+        for iNew in range(newKeyIndex[kOld]+1, iNewTrailing):
+            kNew = newSheet.cell(iNew+1, jNewKey+1).value
+            if kNew in oldKeyIndex: break
+            for jOld in range(nOldHeaders):
+                v = ''
+                if jOld == jOldKey: v = kNew
+                c = outSheet.cell(iOut+1, jOld+1, v)
+                c.fill = fillAddRow
+            iOut += 1
+    iOutTrailing = iOut
+    ##### Copy any trailing oldRows.
+    for iOld in range(iOldTrailing, nOldRows):
+        for jOld in range(nOldHeaders):
+            oldCell = oldSheet.cell(iOld+1, jOld+1)
+            c = outSheet.cell(iOut+1, jOld+1, copy.copy(oldCell.value))
+            CopyCellAttributes(c, oldCell)
+        iOut += 1
+
+    assert( iOut == nOldRows - (iOldTrailing - iOldHeaders) + (iNewTrailing - iNewHeaders) )
+    ##### Now can can use OldAppendTable to append the newRows, 
+    # because we know that the tables are aligned.
+    OldAppendTable(outWb, outSheet, iOutHeaders, iOutTrailing, jOldKey,
+        newSheet, iNewHeaders, iNewTrailing, jNewKey, outFile)
+
+##################### OldAppendTable #####################
+def OldAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
+        newSheet, iNewHeaders, iNewTrailing, jNewKey, outFile):
+    ''' Append columns of new table to old table.
+    If priorityNew is True, then newRows take priority: 
+    oldRows that do not exist in newRows are discarded, and
+    newRows that do not exist in oldRows are added, with
+    the key from newRows.
     Write the resulting spreadsheet to outFile.
     oldWb (and oldSheet) are modified in memory!
     '''
@@ -651,9 +758,11 @@ def AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
         k = oldKeyColumn[i].value
         assert k is not None
         if i == iOldHeaders:
+            # Header row
             newCellRowValues = [ c.value for c in newHeaderCells ]
             newCellRowFills  = [ copy.copy(c.fill)  for c in newHeaderCells ]
         elif k in newKeyIndex:
+            # Row is in both old and new
             newCellRow = newCellRows[newKeyIndex[k]]
             newCellRowValues = [ newCellRow[j].value for j in range(nNewHeaders) ]
             newCellRowFills  = [ copy.copy(newCellRow[j].fill) for j in range(nNewHeaders) ]
@@ -661,6 +770,7 @@ def AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
         assert len(newCellRowValues) == nNewHeaders
         # sys.stderr.write(f"[INFO] newCellRow: '{repr(newCellRow)}'\n")
         # sys.stderr.write(f"[DEBUG] len newCellRowFills: '{len(newCellRowFills)} newCellRowFills: '{repr(newCellRowFills)}'\n")
+        # Copy new cells into the result:
         for j, v in enumerate(newCellRowValues):
             c = oldSheet.cell(i+1, nOldHeaders+j+1, v)
             # sys.stderr.write(f"[DEBUG] c: '{repr(c)} j: '{repr(j)} newCellRowFills[j]: '{repr(newCellRowFills[j])}'\n")
@@ -813,6 +923,7 @@ def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, oldKey, igno
     jKey = next( j for j in range(nColumns) if oldHeaders[j] == oldKey )
     # Create the Excel spreadsheet and fill it with data.
     outWb = openpyxl.Workbook()
+    outWb.iso_dates = True
     outSheet = outWb.active
     # Fill the sheet with data
     for diffRow in diffRows:
@@ -884,8 +995,24 @@ def main():
                     help='Specifies the sheet to be compared, in both oldFile and newFile.  Default: the first sheet with a table with a KEY column.')
     argParser.add_argument('--ignore', nargs=1, action='extend',
                     help='Ignore the specified column when comparing old and new table rows.  This option may be repeated to ignore multiple columns.  The specified column must exist in both old and new tables.')
-    argParser.add_argument('--append', action='store_true',
-                    help='Copy the values of oldFile sheet, appending columns of newFile.\n Rows of newFile that do not exist in oldFile are discarded, and leading and trailing rows\n of newFile (before and after the table) are also discarded.  The number of rows in the output file will be the same is in oldFile.')
+
+    argParser.add_argument('--oldAppend', action='store_true',
+                    help='''Copy the values of oldFile sheet, appending columns of newFile, 
+keeping only the rows of oldFile.  Rows of newFile that do not exist in
+oldFile are discarded.  Leading and trailing rows of newFile (before
+and after the table) are also discarded.  The number of rows in the
+output file will be the same is in oldFile.''')
+
+    argParser.add_argument('--newAppend', action='store_true',
+                    help='''Copy the values of oldFile sheet, appending columns of newFile, 
+but forcing the resulting table body to have the same rows as in
+newFile, based on the keys in newFile.  Rows of newFile that do not
+exist in oldFile are inserted (with the key value from newFile), and
+rows of oldFile that do not exist in newFile are discarded.  Leading and
+trailing rows of newFile (before and after the table) are also discarded.
+The number of rows in the resulting table body will be the same is
+in newFile.''')
+
     argParser.add_argument('--merge', nargs=1, action='extend',
                     help='Output a copy of the old sheet, with values from the specifed MERGE column from the new table merged in.  This option may be repeated to merge more than one column.  The number of rows in the output file will be the same is in oldFile.')
     argParser.add_argument('--mergeAll', action='store_true',
@@ -948,8 +1075,14 @@ def main():
     if iNewHeaders is None:
         raise ValueError(f"[ERROR] Could not find header row in newFile: '{args.newFile}'")
     sys.stderr.write(f"[INFO] In '{args.newFile}' sheet '{newTitle}' found table in rows {iNewHeaders+1}-{iNewTrailing} columns 1-{len(newRows[0])}\n")
-    if args.append and args.merge:
-        sys.stderr.write(f"[ERROR] Options --append and --merge cannot be used together.\n")
+    if args.oldAppend and (args.merge or args.mergeAll):
+        sys.stderr.write(f"[ERROR] Options --oldAppend and --merge cannot be used together.\n")
+        sys.exit(1)
+    if args.newAppend and (args.merge or args.mergeAll):
+        sys.stderr.write(f"[ERROR] Options --newAppend and --merge cannot be used together.\n")
+        sys.exit(1)
+    if args.newAppend and args.oldAppend:
+        sys.stderr.write(f"[ERROR] Options --newAppend and --oldAppend cannot be used together.\n")
         sys.exit(1)
     if args.mergeAll or args.merge:
         if args.mergeAll and args.merge:
@@ -979,9 +1112,13 @@ def main():
         MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
             newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey, outFile, mergeHeaders)
         sys.exit(0)
-    if args.append:
-        AppendTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
-            newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey, outFile)
+    if args.oldAppend:
+        OldAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
+            newSheet, iNewHeaders, iNewTrailing, jNewKey, outFile)
+        sys.exit(0)
+    if args.newAppend:
+        NewAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
+            newSheet, iNewHeaders, iNewTrailing, jNewKey, outFile)
         sys.exit(0)
     ignoreHeaders = args.ignore if args.ignore else []
     # command will be the command string to echo in the first row output.

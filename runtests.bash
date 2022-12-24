@@ -9,8 +9,11 @@
 # Merge test:
   xltablediff.py  --key ID --merge Color test1old.xlsx test1new.xlsx --out test1merge.xlsx
 
-# Append test:
-  xltablediff.py  --key ID --append test1old.xlsx test1new.xlsx --out test1append.xlsx
+# oldAppend test:
+  xltablediff.py  --key ID --oldAppend test1old.xlsx test1new.xlsx --out test1oldAppend.xlsx
+
+# newAppend test:
+  xltablediff.py  --key ID --newAppend test1old.xlsx test1new.xlsx --out test1newAppend.xlsx
 
 
 
