@@ -18,7 +18,20 @@ Rows before and after the table are compared differently than rows of the table:
 
 ## Output
 
-The `--out OUTFILE.xlsx` "option" is required, and tells xltablediff to write the resulting comparison to OUTFILE.xslx .  In the output file, deleted columns, rows or cells are highlighted with light red; and added
+The `--out OUTFILE.xlsx` "option" is required, and tells xltablediff to write the resulting comparison to OUTFILE.xslx .  
+
+The resulting output file highlights differences found between the
+old and new tables.  The first column in the output file
+contains a marker indicating whether the row changed:
+```
+    -   Row deleted
+    +   Row added
+    =   Row unchanged (excluding columns added or deleted)
+    c-  Row changed: this row shows the old content
+    c+  Row changed: this row shows the new content
+```
+
+Deleted columns, rows or cells are highlighted with light red; and added
 columns, rows or cells are highlighted with light green.
 If a row in the table contains values that changed (from old to new),
 that row will be highlighted in light yellow and repeated:
@@ -29,6 +42,7 @@ The table's header row and key column are otherwise highlighted in gray-blue.
 
  - xltablediff compares only one old versus one new table, even if the given Excel files contain multiple sheets and/or tables.  If you want to compare multiple tables in different sheets, you will have to run xltablediff multiple times to compare them all, using the `--sheet`, `--oldSheet` and/or `--newSheet` options to specify which tables to compare.
  - If a cell somehow contains any tabs they will be silently converted to spaces prior to comparison.
+ - Cell formatting might not be retained.
 
 ## Testing
 Some rudimenary test files are included.  You can use them to try out the software, such as: 
@@ -36,5 +50,86 @@ Some rudimenary test files are included.  You can use them to try out the softwa
 ./xltablediff.py --newSheet=Sheet2 --key=ID test1in.xlsx test1in.xlsx --out=test1out.xlsx
 ```
 
-## Options
-TODO
+## Usage and options
+```
+
+usage: xltablediff.py [-h] [--key KEY] [--oldSheet OLDSHEET]
+                      [--newSheet NEWSHEET] [--sheet SHEET] [--ignore IGNORE]
+                      [--oldAppend] [--newAppend] [--merge MERGE] [--mergeAll]
+                      [--maxColumns MAXCOLUMNS] --out OUT
+                      oldFile.xlsx newFile.xlsx
+
+Compare tables in two .xlsx spreadsheets
+
+positional arguments:
+  oldFile.xlsx          Old spreadsheet (*.xlsx)
+  newFile.xlsx          New spreadsheet (*.xlsx)
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --key KEY             Specifies KEY as the name of the key column, i.e., its
+                        header. If KEY is of the form "OLDKEY=NEWKEY" then
+                        OLDKEY and NEWKEY are the corresponding key columns of
+                        the old and new tables, respectively.
+  --oldSheet OLDSHEET   Specifies the sheet in oldFile to be compared.
+                        Default: the first sheet with a table with a KEY
+                        column.
+  --newSheet NEWSHEET   Specifies the sheet in newFile to be compared.
+                        Default: the first sheet with a table with a KEY
+                        column.
+  --sheet SHEET         Specifies the sheet to be compared, in both oldFile
+                        and newFile. Default: the first sheet with a table
+                        with a KEY column.
+  --ignore IGNORE       Ignore the specified column when comparing old and new
+                        table rows. This option may be repeated to ignore
+                        multiple columns. The specified column must exist in
+                        both old and new tables.
+  --oldAppend           Copy the values of oldFile sheet, appending columns of
+                        newFile, keeping only the rows of oldFile. Rows of
+                        newFile that do not exist in oldFile are discarded.
+                        Leading and trailing rows of newFile (before and after
+                        the table) are also discarded. The number of rows in
+                        the output file will be the same is in oldFile.
+  --newAppend           Copy the values of oldFile sheet, appending columns of
+                        newFile, but forcing the resulting table body to have
+                        the same rows as in newFile, based on the keys in
+                        newFile. Rows of newFile that do not exist in oldFile
+                        are inserted (with the key value from newFile), and
+                        rows of oldFile that do not exist in newFile are
+                        discarded. Leading and trailing rows of newFile
+                        (before and after the table) are also discarded. The
+                        number of rows in the resulting table body will be the
+                        same is in newFile.
+  --merge MERGE         Output a copy of the old sheet, with values from the
+                        specifed MERGE column from the new table merged in.
+                        This option may be repeated to merge more than one
+                        column. The number of rows in the output file will be
+                        the same is in oldFile.
+  --mergeAll            Same as '--merge C' for all non-key columns C that are
+                        in both the old and new tables.
+  --maxColumns MAXCOLUMNS
+                        Delete all columns after column N, where N is an
+                        integer (origin 1)
+  --out OUT             Output file of differences. This "option" is actually
+                        REQUIRED.
+```
+
+## Examples
+
+```
+# Diff test:
+  xltablediff.py  --key ID test1old.xlsx test1new.xlsx --out test1diff.xlsx
+
+# Ignore test:
+  xltablediff.py  --key ID --ignore Color test1old.xlsx test1new.xlsx --out test1ignore.xlsx
+
+# Merge test:
+  xltablediff.py  --key ID --merge Color test1old.xlsx test1new.xlsx --out test1merge.xlsx
+
+# oldAppend test:
+  xltablediff.py  --key ID --oldAppend test1old.xlsx test1new.xlsx --out test1oldAppend.xlsx
+
+# newAppend test:
+  xltablediff.py  --key ID --newAppend test1old.xlsx test1new.xlsx --out test1newAppend.xlsx
+```
+  
