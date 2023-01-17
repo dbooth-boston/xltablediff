@@ -1,5 +1,7 @@
 # xltablediff: Compare two Excel spreadsheet tables
 
+![test1diff-screenshot.png](test2diff-screenshot.png "Excel table differences")
+
 Yet another Excel (.xlsx) diff program, but it differs from other such programs in several important ways:
  - It compares two spreadsheet tables as though they are old and new versions of a **relational table**, with a shared key column.  The shared key column is used to determine what rows of the table were added, deleted or changed, regardless of their order in the table.
  - It also shows additions or deletions of entire columns, which helps avoid reporting spurious changes to individual rows.
@@ -21,7 +23,7 @@ Rows before and after the table are compared differently than rows of the table:
 The `--out OUTFILE.xlsx` "option" is required, and tells xltablediff to write the resulting comparison to OUTFILE.xslx .  
 
 The resulting output file highlights differences found between the
-old and new tables.  The first column in the output file
+old and new tables.  The first row in the output file shows the command used to generate it.  The first column in the output file
 contains a marker indicating whether the row changed:
 ```
     -   Row deleted
@@ -114,7 +116,7 @@ optional arguments:
                         REQUIRED.
 ```
 
-## Examples
+## Example commands
 
 ```
 # Diff test:
@@ -132,4 +134,26 @@ optional arguments:
 # newAppend test:
   xltablediff.py  --key ID --newAppend test1old.xlsx test1new.xlsx --out test1newAppend.xlsx
 ```
-  
+
+## Example spreadsheets
+
+### Simple differences
+This example illustrates:
+ - changed leading row (before the table); 
+ - added table row; 
+ - deleted table row; 
+ - cell changed in one table row; and
+ - even though the old and new rows are in a different order, that does not affect the comparison, because each row is identified by its key.
+
+Old table:
+
+![test2old-screenshot.png](test2old-screenshot.png "Old table2") 
+
+New table:
+
+![test2new-screenshot.png](test2new-screenshot.png "New table2")
+
+Diffs:
+
+![test2diff-screenshot.png](test2diff-screenshot.png "Diffs")
+
