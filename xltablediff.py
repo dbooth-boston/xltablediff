@@ -363,6 +363,7 @@ def CompareLeadingTrailingRows(diffRows, oldRows, iOldStart, nOldRows, newRows, 
     # So we need to flatten the dLists, so that we just have pairs: (d, item).
     # flattened = [val for sublist in list_of_lists for val in sublist]
     flatDiffs = [ (d[0], v) for d in rawDiffs for v in d[1] ]
+    nLeadingChanges = len([ d for d in flatDiffs if d[0] != '=' ])
     # Prepend the diff mark:
     diffLeadingLines = [ d[0] + "\t" + d[1] for d in flatDiffs ]
     for line in diffLeadingLines:
@@ -370,6 +371,7 @@ def CompareLeadingTrailingRows(diffRows, oldRows, iOldStart, nOldRows, newRows, 
         diffRow = [ (partialRow[i] if i < len(partialRow) else '') for i in range(nDiffHeaders+1) ]
         diffRows.append(diffRow)
     # sys.stderr.write(f"diffRows:\n{repr(diffRows)}\n")
+    return nLeadingChanges
 
 ##################### CompareHeaders #####################
 def CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex):
@@ -423,6 +425,7 @@ def CompareBody(diffRows, diffHeaders, ignoreHeaders,
     by appending diffRows for the table body.  The first cell of each diffRow 
     will be one of {=, -, +, c-, c+}.
     '''
+    iFirstBodyRow = len(diffRows)
     # Make lists of oldKeys and newKeys.
     oldKeys = [ oldRows[i][jOldKey] for i in range(iOldHeaders+1, iOldTrailing) ]
     # oldKeyIndex will index directly into oldRows, which means that
@@ -525,7 +528,11 @@ def CompareBody(diffRows, diffHeaders, ignoreHeaders,
             diffRows.append(newDiffRow)
         # end of loop: for ii, k in enumerate(newKeys):
     # sys.stderr.write(f"diffRows: \n{repr(diffRows)}\n")
-    return diffRows
+    # Count the changes:
+    nBodyChanges = 0
+    for i in range(iFirstBodyRow, len(diffRows)):
+        if diffRows[i][0] in {'+', '-', 'c-'}: nBodyChanges += 1
+    return nBodyChanges
 
 ##################### Info #####################
 def Info(s):
@@ -581,7 +588,8 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, jOldKey,
         cmdRow[1] = command
         diffRows.append(cmdRow)
     ###### Compare the lines before the start of the table.
-    CompareLeadingTrailingRows(diffRows, oldRows, 0, iOldHeaders, newRows, 0, iNewHeaders, nDiffHeaders)
+    nChanges = CompareLeadingTrailingRows(diffRows, oldRows, 0, iOldHeaders, newRows, 0, iNewHeaders, nDiffHeaders)
+    # Info(f"nLeadingChanges: {nChanges}")
     iDiffHeaders = len(diffRows)
     iDiffBody = iDiffHeaders + 2    # 2 for old and new header rows
     # sys.stderr.write(f"iOldTrailing: {iOldTrailing} iNewTrailing: {iNewTrailing}\n")
@@ -594,21 +602,28 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, jOldKey,
         diffRows.append(diffRow)
     else:
         # At least one column was added or deleted.
-        diffRow = [ 'c-' ]
-        diffRow.extend( [ (oldHeaders[oldHeaderIndex[h]] if h in oldHeaderIndex else '') for h in diffHeaders ] )
-        diffRows.append(diffRow)
-        diffRow = [ 'c+' ]
-        diffRow.extend( [ (newHeaders[newHeaderIndex[h]] if h in newHeaderIndex else '') for h in diffHeaders ] )
-        diffRows.append(diffRow)
+        oldDiffRow = [ 'c-' ]
+        oldDiffRow.extend( [ (oldHeaders[oldHeaderIndex[h]] if h in oldHeaderIndex else '') for h in diffHeaders ] )
+        diffRows.append(oldDiffRow)
+        newDiffRow = [ 'c+' ]
+        newDiffRow.extend( [ (newHeaders[newHeaderIndex[h]] if h in newHeaderIndex else '') for h in diffHeaders ] )
+        diffRows.append(newDiffRow)
+    nColumnChanges = len([ 1 for j in range(1, len(oldDiffRow)) if oldDiffRow[j] != newDiffRow[j] ])
+    # Info(f"nColumnChanges: {nColumnChanges}")
+    nChanges += nColumnChanges
     ###### Compare the table body rows.
     # Compare rows, excluding columns that were added or deleted.
-    CompareBody(diffRows, diffHeaders, ignoreHeaders,
+    nBodyChanges = CompareBody(diffRows, diffHeaders, ignoreHeaders,
         oldRows, oldHeaders, iOldHeaders, iOldTrailing, oldHeaderIndex, jOldKey,
         newRows, newHeaders, iNewHeaders, iNewTrailing, newHeaderIndex, jNewKey)
+    # Info(f"nBodyChanges: {nBodyChanges}")
+    nChanges += nBodyChanges
     iDiffTrailing = len(diffRows)
     ###### Compare trailing rows (after the table).
-    CompareLeadingTrailingRows(diffRows, oldRows, iOldTrailing, len(oldRows), newRows, iNewTrailing, len(newRows), nDiffHeaders)
-    return diffRows, iDiffHeaders, iDiffBody, iDiffTrailing
+    nTrailingChanges = CompareLeadingTrailingRows(diffRows, oldRows, iOldTrailing, len(oldRows), newRows, iNewTrailing, len(newRows), nDiffHeaders)
+    # Info(f"nTrailingChanges: {nTrailingChanges}")
+    nChanges += nTrailingChanges
+    return diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, nChanges
 
 ##################### Value #####################
 def Value(v):
@@ -1126,11 +1141,13 @@ in newFile.''')
     argv = sys.argv.copy()
     argv[0] = os.path.basename(argv[0])
     command = " ".join(argv)
-    diffRows, iDiffHeaders, iDiffBody, iDiffTrailing = CompareTables(oldRows, iOldHeaders, iOldTrailing, jOldKey,
+    diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, nChanges = CompareTables(oldRows, iOldHeaders, iOldTrailing, jOldKey,
         newRows, iNewHeaders, iNewTrailing, jNewKey, ignoreHeaders, command)
+    Info(f"{nChanges} differences found\n")
     oldKey = oldRows[iOldHeaders][jOldKey]
     WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, oldKey, ignoreHeaders, outFile)
-    sys.exit(0)
+    if nChanges == 0: sys.exit(0)
+    else: sys.exit(1)
 
 
 ############################################################################
