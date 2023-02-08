@@ -311,7 +311,7 @@ def FindTable(wb, wantedTitle, key, file, maxColumns):
         if key:
             sys.stderr.write(f"[ERROR] Key not found: '{key}'\n")
             sys.stderr.write(f" In file: '{file}'\n")
-            sys.stderr.write(f" This can be caused by having data in a column beyond the table.\n")
+            sys.stderr.write(f" This can be caused by duplicate column names\n or by having data in a column beyond the table.\n")
             pKeys = " ".join(sorted(map((lambda v: f"'{v}'"), allPossibleKeys)))
             if allPossibleKeys:
                 sys.stderr.write(f" Potential keys: {pKeys}\n")
