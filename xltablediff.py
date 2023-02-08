@@ -594,6 +594,7 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, jOldKey,
     iDiffBody = iDiffHeaders + 2    # 2 for old and new header rows
     # sys.stderr.write(f"iOldTrailing: {iOldTrailing} iNewTrailing: {iNewTrailing}\n")
     ###### Add old and new headers to diffRows.
+    nColumnChanges = 0
     if len(diffHeaders) == len(oldHeaders):
         # No columns were added or deleted.
         iDiffBody = iDiffHeaders + 1    # Only one header row after all
@@ -608,7 +609,7 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, jOldKey,
         newDiffRow = [ 'c+' ]
         newDiffRow.extend( [ (newHeaders[newHeaderIndex[h]] if h in newHeaderIndex else '') for h in diffHeaders ] )
         diffRows.append(newDiffRow)
-    nColumnChanges = len([ 1 for j in range(1, len(oldDiffRow)) if oldDiffRow[j] != newDiffRow[j] ])
+        nColumnChanges = len([ 1 for j in range(1, len(diffHeaders)) if oldDiffRow[j] != newDiffRow[j] ])
     # Info(f"nColumnChanges: {nColumnChanges}")
     nChanges += nColumnChanges
     ###### Compare the table body rows.
