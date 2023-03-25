@@ -240,7 +240,7 @@ def UniqueName(header, headerSet):
     and add the new name to headerSet.  MODIFIES headerSet!
     '''
     if header not in headerSet:
-        headerSet.add(h)
+        headerSet.add(header)
         return header
     i = 0
     h = ""
@@ -698,7 +698,7 @@ def NewAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
     newHeaderCells = newCellRows[iNewHeaders]   # Tuple
     nOldHeaders = len(oldHeaderCells)
     nNewHeaders = len(newHeaderCells)
-    ##### First copy all oldRows before the table body
+    ##### First copy all oldRows (including headers) before the table body
     # iOut is the 0-based row index in outSheet where we'll be writing:
     iOut = 0
     for iOld in range(iOldHeaders+1):
@@ -798,6 +798,7 @@ def OldAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
     # Copy existing newRows into oldRows
     emptyNewCellRowValues = [ None for j in range(nNewHeaders) ]
     emptyNewCellRowFills = [ fillAddRow for j in range(nNewHeaders) ]
+    headerSet = set([ c.value for c in oldHeaderCells ])
     for i in range(iOldHeaders, iOldTrailing):
         newCellRowValues = emptyNewCellRowValues
         newCellRowFills = emptyNewCellRowFills
@@ -805,7 +806,7 @@ def OldAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
         assert k is not None
         if i == iOldHeaders:
             # Header row
-            newCellRowValues = [ c.value for c in newHeaderCells ]
+            newCellRowValues = [ UniqueName(c.value, headerSet) for c in newHeaderCells ]
             newCellRowFills  = [ copy.copy(c.fill)  for c in newHeaderCells ]
         elif k in newKeyIndex:
             # Row is in both old and new
