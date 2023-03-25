@@ -234,6 +234,23 @@ def GuessHeaderRow(rows, key, title):
     # sys.stderr.write(f"possibleKeys: {repr(possibleKeys)}\n")
     return iHeaders, possibleKeys
 
+##################### UniqueName #####################
+def UniqueName(header, headerSet):
+    ''' Return a new name for header that is unique in headerSet,
+    and add the new name to headerSet.  MODIFIES headerSet!
+    '''
+    if header not in headerSet:
+        headerSet.add(h)
+        return header
+    i = 0
+    h = ""
+    while True:
+        i += 1
+        h = header + "_" + str(i)
+        if h not in headerSet: break
+    headerSet.add(h)
+    return h
+
 ##################### LoadWorkBook #####################
 def LoadWorkBook(file, data_only=True):
     ''' Read a .xlsx file and return the workbook.
@@ -253,7 +270,7 @@ def LoadWorkBook(file, data_only=True):
 
 ##################### FindTable #####################
 def FindTable(wb, wantedTitle, key, file, maxColumns):
-    ''' Read a workbook wb and possible a wantedTitle, find the desired table.
+    ''' Read a workbook wb and possibly a wantedTitle, find the desired table.
     Raises an exception if the table is not found.
     Returns a tuple:
         sheet = the sheet in which the table was found.
@@ -261,8 +278,8 @@ def FindTable(wb, wantedTitle, key, file, maxColumns):
         iHeaders = 0-based index of the header row in rows.
         iTrailing = 0-based index of rows after the table, which begins
             with the first row that lacks a key.
-        key = Key used: either the one that was passed in or the first
-            possibleKey if no key was specified.
+        jKey = Index of key used: either the one that was passed in or the 
+            first possibleKey if no key was specified.
     '''
     # Potentially look through all sheets for the one to compare.
     # If the --sheet option was specified, then only that one will be 
@@ -271,6 +288,7 @@ def FindTable(wb, wantedTitle, key, file, maxColumns):
     iHeaders = None
     rows = None
     title = ""
+    possibleKeys = []
     allPossibleKeys = set()
     for s in wb:
         # sys.stderr.write(f"[INFO] Sheet: '{s.title} type of s: {repr(type(s))}'\n")
@@ -303,31 +321,43 @@ def FindTable(wb, wantedTitle, key, file, maxColumns):
             # sys.stderr.write(f"[INFO] In sheet '{s.title}' found table headers at row {iHeaders+1}\n")
         if sheet:
             break
-    if not sheet:
-        if wantedTitle:
+    if not sheet and wantedTitle:
             sys.stderr.write(f"[ERROR] Sheet not found: '{wantedTitle}'\n")
             sys.stderr.write(f" in file: '{file}'\n")
             sys.exit(1)
-        if key:
-            sys.stderr.write(f"[ERROR] Key not found: '{key}'\n")
-            sys.stderr.write(f" In file: '{file}'\n")
-            sys.stderr.write(f" This can be caused by duplicate column names\n or by having data in a column beyond the table.\n")
-            pKeys = " ".join(sorted(map((lambda v: f"'{v}'"), allPossibleKeys)))
-            if allPossibleKeys:
-                sys.stderr.write(f" Potential keys: {pKeys}\n")
-            sys.exit(1)
-        sys.stderr.write(f"[ERROR] Unable to find header row\n")
+    if iHeaders is None:
+        withKey = ""
+        if key: withKey = f" with key '{key}'"
+        sys.stderr.write(f"[ERROR] Unable to find header row{withKey}\n")
         sys.stderr.write(f" in file: '{file}'\n")
+        sys.stderr.write(f" This can be caused by duplicate column names\n or by having data in a column beyond the table.\n")
+        pKeys = " ".join(sorted(map((lambda v: f"'{v}'"), allPossibleKeys)))
+        if key and allPossibleKeys:
+            sys.stderr.write(f" Potential keys: {pKeys}\n")
         sys.exit(1)
     # Find the key
-    if key: allPossibleKeys = set([key])
-    jKey = next( (j for j,v in enumerate(rows[iHeaders]) if v in allPossibleKeys), -1 )
-    if jKey < 0:
-        sys.stderr.write(f"[ERROR] Key not found in header row {iHeaders+1}: '{key}'\n")
+    originalKey = key
+    if key: 
+        if key not in rows[iHeaders]:
+            sys.stderr.write(f"[ERROR] Key not found in header row {iHeaders+1}: '{key}'\n")
+            sys.stderr.write(f" in file: '{file}'  sheet: '{sheet.title}\n")
+            sys.exit(1)
+        possibleKeys = [key]
+        allPossibleKeys = set([key])
+    elif not possibleKeys:
+        sys.stderr.write(f"[ERROR] No key found in header row {iHeaders+1}\n")
         sys.stderr.write(f" in file: '{file}'  sheet: '{sheet.title}\n")
         sys.exit(1)
-    if not key:
-        key = rows[iHeaders][jKey]
+    elif len(possibleKeys) == 1: key = possibleKeys[0]
+    else:
+        # Look for the first header ending with "id":
+        key = next( (k for k in possibleKeys if k.lower().endswith('id')), '' )
+        # Fall back to taking the first of possibleKeys:
+        if not key: key = possibleKeys[0]
+    # Find the index of the key:
+    jKey = next( (j for j,v in enumerate(rows[iHeaders]) if v == key), -1 )
+    assert( jKey >= 0 )
+    if not originalKey:
         sys.stderr.write(f"[INFO] Assuming key: '{key}'\n")
     # Find the end of the table: the first row with an empty key (if any).
     iTrailing = next( (i for i in range(iHeaders, len(rows)) if rows[i][jKey] == ''), len(rows) )
@@ -1079,17 +1109,43 @@ in newFile.''')
     if args.maxColumns: maxColumns = args.maxColumns
     # sys.stderr.write("args: \n" + repr(args) + "\n\n")
     oldWb = LoadWorkBook(args.oldFile, data_only=False)
+    newWb = LoadWorkBook(args.newFile, data_only=False)
+    ####### Determine sheets to compare
+    oldSheetTitles = [ s.title for s in oldWb if (not oldSheetTitle) or s.title == oldSheetTitle ]
+    newSheetTitles = [ s.title for s in newWb if (not newSheetTitle) or s.title == newSheetTitle ]
+    if not oldSheetTitles:
+        raise ValueError(f"[ERROR] Sheet '{oldSheetTitle}' not found in oldFile: '{args.oldFile}'")
+    if not newSheetTitles:
+        raise ValueError(f"[ERROR] Sheet '{newSheetTitle}' not found in newFile: '{args.newFile}'")
+    # Default to all matching sheet titles:
+    newTitleSet = set(newSheetTitles)
+    titlePairs = [ (t, t) for t in oldSheetTitles if t in newTitleSet ]
+    if len(oldSheetTitles) == 1: oldSheetTitle = oldSheetTitles[0]
+    if len(newSheetTitles) == 1: newSheetTitle = newSheetTitles[0]
+    if oldSheetTitle and not newSheetTitle: newSheetTitle = newSheetTitles[0]
+    if newSheetTitle and not oldSheetTitle: oldSheetTitle = oldSheetTitles[0]
+    # Single sheet comparision:
+    if newSheetTitle: titlePairs = [ (oldSheetTitle, newSheetTitle) ]
+    #######
+    # STOPPED HERE.  I was starting to make this work on multiple sheets.
+    # I got as far as constructing titlePairs to be the pairs of sheets to
+    # compare (though not tested), but refactoring is needed to: 1. move
+    # the output workbook creation and file writing where it can be outside
+    # a loop that loops through the titlePairs; and 2. also move the
+    # argument processing where it can be outside that new loop.
+    # New loop would like this:
+    #     for oldSheetTitle, newSheetTitle in titlePairs:
+    #######
     # These will be rows of values-only:
     (oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey) = FindTable(oldWb, oldSheetTitle, oldKey, args.oldFile, maxColumns)
     oldTitle = oldSheet.title
     if iOldHeaders is None:
-        raise ValueError(f"[ERROR] Could not find header row in newFile: '{args.oldFile}'")
+        raise ValueError(f"[ERROR] Could not find header row in sheet '{oldSheetTitle}' in oldFile: '{args.oldFile}'")
     sys.stderr.write(f"[INFO] In '{args.oldFile}' sheet '{oldTitle}' found table in rows {iOldHeaders+1}-{iOldTrailing} columns 1-{len(oldRows[0])}\n")
-    newWb = LoadWorkBook(args.newFile, data_only=False)
     (newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey) = FindTable(newWb, newSheetTitle, newKey, args.newFile, maxColumns)
     newTitle = newSheet.title
     if iNewHeaders is None:
-        raise ValueError(f"[ERROR] Could not find header row in newFile: '{args.newFile}'")
+        raise ValueError(f"[ERROR] Could not find header row in sheet '{newSheetTitle}' in newFile: '{args.newFile}'")
     sys.stderr.write(f"[INFO] In '{args.newFile}' sheet '{newTitle}' found table in rows {iNewHeaders+1}-{iNewTrailing} columns 1-{len(newRows[0])}\n")
     if args.oldAppend and (args.merge or args.mergeAll):
         sys.stderr.write(f"[ERROR] Options --oldAppend and --merge cannot be used together.\n")
@@ -1136,6 +1192,7 @@ in newFile.''')
         NewAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
             newSheet, iNewHeaders, iNewTrailing, jNewKey, outFile)
         sys.exit(0)
+
     ignoreHeaders = args.ignore if args.ignore else []
     # command will be the command string to echo in the first row output.
     command = ''
@@ -1144,7 +1201,7 @@ in newFile.''')
     command = " ".join(argv)
     diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, nChanges = CompareTables(oldRows, iOldHeaders, iOldTrailing, jOldKey,
         newRows, iNewHeaders, iNewTrailing, jNewKey, ignoreHeaders, command)
-    Info(f"{nChanges} differences found\n")
+    Info(f"{nChanges} total differences found\n")
     oldKey = oldRows[iOldHeaders][jOldKey]
     WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, oldKey, ignoreHeaders, outFile)
     if nChanges == 0: sys.exit(0)
