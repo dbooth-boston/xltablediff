@@ -639,7 +639,9 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, jOldKey,
         newDiffRow = [ 'c+' ]
         newDiffRow.extend( [ (newHeaders[newHeaderIndex[h]] if h in newHeaderIndex else '') for h in diffHeaders ] )
         diffRows.append(newDiffRow)
-        nColumnChanges = len([ 1 for j in range(1, len(diffHeaders)) if oldDiffRow[j] != newDiffRow[j] ])
+        # Skip the marker column in counting column changes:
+        columnChanges = [ j for j in range(1, len(oldDiffRow)) if oldDiffRow[j] != newDiffRow[j] ]
+        nColumnChanges = len(columnChanges)
     # Info(f"nColumnChanges: {nColumnChanges}")
     nChanges += nColumnChanges
     ###### Compare the table body rows.
