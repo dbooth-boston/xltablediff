@@ -561,7 +561,10 @@ def CompareBody(diffRows, diffHeaders, ignoreHeaders,
     # Count the changes:
     nBodyChanges = 0
     for i in range(iFirstBodyRow, len(diffRows)):
-        if diffRows[i][0] in {'+', '-', 'c-'}: nBodyChanges += 1
+        if diffRows[i][0] in {'+', '-'}: nBodyChanges += 1
+        elif diffRows[i][0] == 'c-':
+            for j in range(1, len(diffRows[i])):
+                if diffRows[i][j] != diffRows[i+1][j]: nBodyChanges += 1
     return nBodyChanges
 
 ##################### Info #####################
