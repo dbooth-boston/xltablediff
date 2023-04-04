@@ -830,7 +830,7 @@ def OldAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
             # c.fill = fillAddRow
             # sys.stderr.write(f"[INFO] nOldHeaders: '{repr(nOldHeaders)} j: '{repr(j)}'\n")
     # Write the output file
-    oldSheet.title += '-Appended'
+    # oldSheet.title += '-Appended'
     oldWb.save(outFile)
     sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
 
@@ -882,7 +882,7 @@ def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
                         # Value changed
                         oldWsRows[i][jOld].fill = fillChange
     # Write the output file
-    oldSheet.title += '-Merged'
+    # oldSheet.title += '-Merged'
     oldWb.save(outFile)
     sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
 
