@@ -1151,7 +1151,21 @@ in newFile.''')
     (newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey) = FindTable(newWb, newSheetTitle, newKey, args.newFile, maxColumns)
     newTitle = newSheet.title
     if iNewHeaders is None:
-        raise ValueError(f"[ERROR] Could not find header row in sheet '{newSheetTitle}' in newFile: '{args.newFile}'")
+        raise ValueError(f"[ERROR] Could not find header row in sheet '{newTitle}' in newFile: '{args.newFile}'")
+    # Disable the ability to compare trailing rows, because this was found
+    # to be error prone: if the table contained a blank row (or key), the 
+    # rest of the table would be treated as trailing rows instead of being
+    # included in the table comparison.
+    if iOldTrailing < len(oldRows):
+        Die(f"Trailing non-table rows found at row {iOldTrailing+1}\n"
+            + f" in sheet '{oldTitle}' in oldFile: '{args.oldFile}'"
+            + f" Trailing rows are now disallowed because they were\n"
+            + f" found to be error prone.")
+    if iNewTrailing < len(newRows):
+        Die(f"Trailing non-table rows found at row {iNewTrailing+1}\n"
+            + f" in sheet '{newTitle}' in newFile: '{args.newFile}'"
+            + f" Trailing rows are now disallowed because they were\n"
+            + f" found to be error prone.")
     sys.stderr.write(f"[INFO] In '{args.newFile}' sheet '{newTitle}' found table in rows {iNewHeaders+1}-{iNewTrailing} columns 1-{len(newRows[0])}\n")
     if args.oldAppend and (args.merge or args.mergeAll):
         sys.stderr.write(f"[ERROR] Options --oldAppend and --merge cannot be used together.\n")
