@@ -832,7 +832,7 @@ def OldAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
     # Write the output file
     # oldSheet.title += '-Appended'
     oldWb.save(outFile)
-    sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n")
+    sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n\n")
 
 ##################### MergeTable #####################
 def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
@@ -1222,7 +1222,7 @@ in newFile.''')
     command = " ".join(argv)
     diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, nChanges = CompareTables(oldRows, iOldHeaders, iOldTrailing, jOldKey,
         newRows, iNewHeaders, iNewTrailing, jNewKey, ignoreHeaders, command)
-    Info(f"{nChanges} total differences found\n")
+    Info(f"{nChanges} total differences found")
     oldKey = oldRows[iOldHeaders][jOldKey]
     WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, oldKey, ignoreHeaders, outFile)
     if nChanges == 0: sys.exit(0)
