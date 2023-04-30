@@ -1070,7 +1070,7 @@ in newFile.''')
     argParser.add_argument('--mergeAll', action='store_true',
                     help="Same as '--merge C' for all non-key columns C that are in both the old and new tables.")
     argParser.add_argument('--maxColumns', type=int,
-                    help='Delete all columns after column N, where N is an integer (origin 1)')
+                    help='Delete all columns after column N, where N is an integer (origin 1).  0 means no limit.  Default: 100.')
     argParser.add_argument('oldFile', metavar='oldFile.xlsx', type=str,
                     help='Old spreadsheet (*.xlsx)')
     argParser.add_argument('newFile', metavar='newFile.xlsx', type=str,
@@ -1111,8 +1111,9 @@ in newFile.''')
     if outFile == args.oldFile or outFile == args.newFile:
         sys.stderr.write(f"[ERROR] Output filename must differ from newFile and oldFile: {outFile}\n")
         sys.exit(1)
-    maxColumns = 0
+    maxColumns = -1
     if args.maxColumns: maxColumns = args.maxColumns
+    if maxColumns == -1: maxColumns = 100
     # sys.stderr.write("args: \n" + repr(args) + "\n\n")
     oldWb = LoadWorkBook(args.oldFile, data_only=False)
     newWb = LoadWorkBook(args.newFile, data_only=False)
