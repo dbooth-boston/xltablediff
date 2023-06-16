@@ -501,8 +501,8 @@ def CompareBody(diffRows, diffHeaders, ignoreHeaders,
     ignoreSet = set(ignoreHeaders)
     remainingHeaders = ignoreSet.difference(commonHeaders)
     if remainingHeaders:
-        h = sorted(remainingHeaders).join(" ")
-        sys.stderr.write(f"[ERROR] Bad --ignore column name(s): h\n Column headers specified with --ignore must exist in both old and new tables\n")
+        h = " ".join(sorted(remainingHeaders))
+        sys.stderr.write(f"[ERROR] Bad --ignore column name(s): {h}\n Column headers specified with --ignore must exist in both old and new tables\n")
         sys.exit(1)
     compareHeaders = commonHeaders.difference(ignoreSet)
     # Now copy the newRows into diffRows, marking each diff row 
