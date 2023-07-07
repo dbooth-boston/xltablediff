@@ -767,6 +767,41 @@ def NewAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
     OldAppendTable(outWb, outSheet, iOutHeaders, iOutTrailing, jOldKey,
         newSheet, iNewHeaders, iNewTrailing, jNewKey, outFile)
 
+##################### GrabTable #####################
+def GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
+        grabHeaders, outFile):
+    ''' Grab the comma-separated columnsWanted and output them 
+    (with header row) as CSV to stdout.
+    '''
+    wantedList = [ h.strip() for h in grabHeaders.split(",") ]
+    wantedList = [ h for h in wantedList if h != '' ]
+    nWanted = len(wantedList)
+    if not nWanted:
+        raise ValueError(f"[ERROR] --grab option did not specify any column names")
+    # Get the old headers
+    oldCellRows = tuple(oldSheet.rows)
+    oldHeaderCells = oldCellRows[iOldHeaders]   # Tuple
+    nOldHeaders = len(oldHeaderCells)
+    oldHeaders = [ c.value for c in oldHeaderCells ]
+    oldHeaderIndex = { oldHeaders[i]: i for i in range(nOldHeaders) }
+    for i in range(iOldHeaders, iOldTrailing):
+        for jWanted in range(nWanted):
+            h = wantedList[jWanted]
+            if h not in oldHeaderIndex:
+                raise ValueError(f"[ERROR] Column '{h}' not found in sheet '{oldSheet.title}' in file: '{args.oldFile}'")
+            j = oldHeaderIndex[h]
+            v = oldCellRows[i][j].value
+            v = '' if v is None else v
+            v = str(v)
+            # print(f"v: {repr(v)}")
+            # sys.exit(0)
+            v = v.strip()
+            sys.stdout.write(v)
+            if jWanted < nWanted-1: sys.stdout.write(',')
+            else: sys.stdout.write('\n')
+    nRows = iOldTrailing - iOldHeaders
+    sys.stderr.write(f"[INFO] Wrote {nRows} rows (including header)\n\n")
+
 ##################### OldAppendTable #####################
 def OldAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
         newSheet, iNewHeaders, iNewTrailing, jNewKey, outFile):
@@ -1066,7 +1101,7 @@ The number of rows in the resulting table body will be the same is
 in newFile.''')
 
     argParser.add_argument('--merge', nargs=1, action='extend',
-                    help='Output a copy of the old sheet, with values from the specifed MERGE column from the new table merged in.  This option may be repeated to merge more than one column.  The number of rows in the output file will be the same is in oldFile.')
+                    help='Output a copy of the old sheet, with values from the specifed MERGE column from the new table merged in.  Merging means that for any row in the old sheet having the same key in the new table, the MERGE column value is replaced by the value from the new table, even if that new value is empty.  Any row in the old sheet that does not have a corresponding key in the new table remains unchanged.  Any row in the new table that does not have a corresponding key in the old sheet is discarded.  This option may be repeated to merge more than one column.  The number of rows in the output file will be the same is in oldFile.')
     argParser.add_argument('--mergeAll', action='store_true',
                     help="Same as '--merge C' for all non-key columns C that are in both the old and new tables.")
     argParser.add_argument('--maxColumns', type=int,
@@ -1074,11 +1109,25 @@ in newFile.''')
     argParser.add_argument('oldFile', metavar='oldFile.xlsx', type=str,
                     help='Old spreadsheet (*.xlsx)')
     argParser.add_argument('newFile', metavar='newFile.xlsx', type=str,
-                    help='New spreadsheet (*.xlsx)')
+                    help='New spreadsheet (*.xlsx)', nargs='?', default='')
+    argParser.add_argument('--grab',
+                    help='Comma-separated list of columns to be output as CSV with header row.')
     argParser.add_argument('--out',
-                    help='Output file of differences.  This "option" is actually REQUIRED.', required=True)
+                    help='Output file of differences.  This "option" is actually REQUIRED unless the --grab option is used.')
     # sys.stderr.write(f"[INFO] calling print_using....\n")
     args = argParser.parse_args()
+    if args.grab:
+        if args.newFile:
+            raise ValueError(f"[ERROR] newFile.xlsx must not be specified when --grab option is used.")
+        # Quick and dirty: Make newFile same as oldFile to get around
+        # newFile being required.
+        args.newFile = args.oldFile
+        if args.out:
+            raise ValueError(f"[ERROR] --out option cannot be used with --grab option.")
+    if not args.newFile:
+        raise ValueError(f"[ERROR] newFile.xlsx must be specified.")
+    if (not args.out) and (not args.grab):
+        raise ValueError(f"[ERROR] --out=outFile.xlsx option is REQUIRED.")
     if args.sheet and args.oldSheet:
         raise ValueError(f"[ERROR] Illegal combination of options: --sheet with --oldSheet")
     if args.sheet and args.newSheet:
@@ -1104,9 +1153,8 @@ in newFile.''')
             sys.stderr.write(f"[ERROR] Key must not be empty: '--key {args.key}'\n")
             sys.exit(1)
     outFile = args.out
-    if not outFile:
+    if (not outFile) and (not args.grab):
         sys.stderr.write("[ERROR] Output filename must be specified: --out=outFile.xlsx\n")
-        sys.stderr.write(Usage())
         sys.exit(1)
     if outFile == args.oldFile or outFile == args.newFile:
         sys.stderr.write(f"[ERROR] Output filename must differ from newFile and oldFile: {outFile}\n")
@@ -1212,6 +1260,10 @@ in newFile.''')
     if args.newAppend:
         NewAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
             newSheet, iNewHeaders, iNewTrailing, jNewKey, outFile)
+        sys.exit(0)
+    if args.grab:
+        GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
+            args.grab, outFile)
         sys.exit(0)
 
     ignoreHeaders = args.ignore if args.ignore else []
