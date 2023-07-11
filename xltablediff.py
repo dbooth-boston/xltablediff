@@ -767,11 +767,23 @@ def NewAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
     OldAppendTable(outWb, outSheet, iOutHeaders, iOutTrailing, jOldKey,
         newSheet, iNewHeaders, iNewTrailing, jNewKey, outFile)
 
+
+##################### CellToString #####################
+def CellToString(cell):
+    ''' Given a cell, return the value as a plain string,
+    with leading and trailing whitespace trimmed.
+    '''
+    v = cell.value
+    if v is None: v = ''
+    return str(v).strip()
+
 ##################### GrabTable #####################
 def GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
-        grabHeaders, outFile):
+        grabHeaders, outFile, filter):
     ''' Grab the comma-separated columnsWanted and output them 
     (with header row) as CSV to stdout.
+    If filter is provided, it must be a python boolean expression
+    and only rows for which filter is true are included.
     '''
     wantedList = [ h.strip() for h in grabHeaders.split(",") ]
     wantedList = [ h for h in wantedList if h != '' ]
@@ -782,25 +794,32 @@ def GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
     oldCellRows = tuple(oldSheet.rows)
     oldHeaderCells = oldCellRows[iOldHeaders]   # Tuple
     nOldHeaders = len(oldHeaderCells)
-    oldHeaders = [ c.value for c in oldHeaderCells ]
+    oldHeaders = [ CellToString(c) for c in oldHeaderCells ]
     oldHeaderIndex = { oldHeaders[i]: i for i in range(nOldHeaders) }
+    nRows = -1
     for i in range(iOldHeaders, iOldTrailing):
+        row = [ CellToString(c) for c in oldCellRows[i] ]
+        # Make v be a dictionary that maps the column name to the value
+        assert(len(row) == len(oldHeaders))
+        v =   { oldHeaders[j]: row[j] for j in range(len(oldHeaders)) }
+        env = { oldHeaders[j]: row[j] for j in range(len(oldHeaders)) }
+        # If a column name is not a permissible variable name in python,
+        # the value can be accessed by v['bad-var-name']:
+        env['v'] = v
+        if i>iOldHeaders and filter and not(eval(filter, env)): continue
         for jWanted in range(nWanted):
             h = wantedList[jWanted]
             if h not in oldHeaderIndex:
                 raise ValueError(f"[ERROR] Column '{h}' not found in sheet '{oldSheet.title}' in file: '{args.oldFile}'")
             j = oldHeaderIndex[h]
-            v = oldCellRows[i][j].value
-            v = '' if v is None else v
-            v = str(v)
-            # print(f"v: {repr(v)}")
+            v = CellToString(oldCellRows[i][j])
+            # print(f"i: {i} v: {repr(v)}")
             # sys.exit(0)
-            v = v.strip()
             sys.stdout.write(v)
             if jWanted < nWanted-1: sys.stdout.write(',')
             else: sys.stdout.write('\n')
-    nRows = iOldTrailing - iOldHeaders
-    sys.stderr.write(f"[INFO] Wrote {nRows} rows (including header)\n\n")
+        nRows += 1
+    sys.stderr.write(f"[INFO] Wrote {nRows} rows (plus header)\n\n")
 
 ##################### OldAppendTable #####################
 def OldAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
@@ -1112,6 +1131,8 @@ in newFile.''')
                     help='New spreadsheet (*.xlsx)', nargs='?', default='')
     argParser.add_argument('--grab',
                     help='Comma-separated list of columns to be output as CSV with header row.')
+    argParser.add_argument('--filter',
+                    help='Python expression.  If provided and true, only output rows (except the header row, which is always output) for which FILTER evaluates to true-ish.  In FILTER, column names can be used as python variables.  If a column name would not be a valid python variable, it can be accessed as v["my-bad-var"].  This option only works with --grab.')
     argParser.add_argument('--out',
                     help='Output file of differences.  This "option" is actually REQUIRED unless the --grab option is used.')
     # sys.stderr.write(f"[INFO] calling print_using....\n")
@@ -1185,7 +1206,7 @@ in newFile.''')
             + f" found to be error prone.")
     if args.grab:
         GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
-            args.grab, outFile)
+            args.grab, outFile, args.filter)
         sys.exit(0)
     ###### new sheet:
     newWb = LoadWorkBook(args.newFile, data_only=False)
