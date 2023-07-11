@@ -1119,12 +1119,9 @@ in newFile.''')
     if args.grab:
         if args.newFile:
             raise ValueError(f"[ERROR] newFile.xlsx must not be specified when --grab option is used.")
-        # Quick and dirty: Make newFile same as oldFile to get around
-        # newFile being required.
-        args.newFile = args.oldFile
         if args.out:
             raise ValueError(f"[ERROR] --out option cannot be used with --grab option.")
-    if not args.newFile:
+    if (not args.newFile) and (not args.grab):
         raise ValueError(f"[ERROR] newFile.xlsx must be specified.")
     if (not args.out) and (not args.grab):
         raise ValueError(f"[ERROR] --out=outFile.xlsx option is REQUIRED.")
@@ -1164,43 +1161,19 @@ in newFile.''')
     if maxColumns == -1: maxColumns = 100
     # sys.stderr.write("args: \n" + repr(args) + "\n\n")
     oldWb = LoadWorkBook(args.oldFile, data_only=False)
-    newWb = LoadWorkBook(args.newFile, data_only=False)
     ####### Determine sheets to compare
     oldSheetTitles = [ s.title for s in oldWb if (not oldSheetTitle) or s.title == oldSheetTitle ]
-    newSheetTitles = [ s.title for s in newWb if (not newSheetTitle) or s.title == newSheetTitle ]
     if not oldSheetTitles:
         raise ValueError(f"[ERROR] Sheet '{oldSheetTitle}' not found in oldFile: '{args.oldFile}'")
-    if not newSheetTitles:
-        raise ValueError(f"[ERROR] Sheet '{newSheetTitle}' not found in newFile: '{args.newFile}'")
     # Default to all matching sheet titles:
-    newTitleSet = set(newSheetTitles)
-    titlePairs = [ (t, t) for t in oldSheetTitles if t in newTitleSet ]
     if len(oldSheetTitles) == 1: oldSheetTitle = oldSheetTitles[0]
-    if len(newSheetTitles) == 1: newSheetTitle = newSheetTitles[0]
-    if oldSheetTitle and not newSheetTitle: newSheetTitle = newSheetTitles[0]
-    if newSheetTitle and not oldSheetTitle: oldSheetTitle = oldSheetTitles[0]
-    # Single sheet comparision:
-    if newSheetTitle: titlePairs = [ (oldSheetTitle, newSheetTitle) ]
-    #######
-    # STOPPED HERE.  I was starting to make this work on multiple sheets.
-    # I got as far as constructing titlePairs to be the pairs of sheets to
-    # compare (though not tested), but refactoring is needed to: 1. move
-    # the output workbook creation and file writing where it can be outside
-    # a loop that loops through the titlePairs; and 2. also move the
-    # argument processing where it can be outside that new loop.
-    # New loop would like this:
-    #     for oldSheetTitle, newSheetTitle in titlePairs:
-    #######
+    ####### old Sheet:
     # These will be rows of values-only:
     (oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey) = FindTable(oldWb, oldSheetTitle, oldKey, args.oldFile, maxColumns)
     oldTitle = oldSheet.title
     if iOldHeaders is None:
         raise ValueError(f"[ERROR] Could not find header row in sheet '{oldSheetTitle}' in oldFile: '{args.oldFile}'")
     sys.stderr.write(f"[INFO] In '{args.oldFile}' sheet '{oldTitle}' found table in rows {iOldHeaders+1}-{iOldTrailing} columns 1-{len(oldRows[0])}\n")
-    (newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey) = FindTable(newWb, newSheetTitle, newKey, args.newFile, maxColumns)
-    newTitle = newSheet.title
-    if iNewHeaders is None:
-        raise ValueError(f"[ERROR] Could not find header row in sheet '{newTitle}' in newFile: '{args.newFile}'")
     # Disable the ability to compare trailing rows, because this was found
     # to be error prone: if the table contained a blank row (or key), the 
     # rest of the table would be treated as trailing rows instead of being
@@ -1210,6 +1183,24 @@ in newFile.''')
             + f" in sheet '{oldTitle}' in oldFile: '{args.oldFile}'"
             + f" Trailing rows are now disallowed because they were\n"
             + f" found to be error prone.")
+    if args.grab:
+        GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
+            args.grab, outFile)
+        sys.exit(0)
+    ###### new sheet:
+    newWb = LoadWorkBook(args.newFile, data_only=False)
+    newSheetTitles = [ s.title for s in newWb if (not newSheetTitle) or s.title == newSheetTitle ]
+    if not newSheetTitles:
+        raise ValueError(f"[ERROR] Sheet '{newSheetTitle}' not found in newFile: '{args.newFile}'")
+    if oldSheetTitle and not newSheetTitle: newSheetTitle = newSheetTitles[0]
+    # Default to all matching sheet titles:
+    if len(newSheetTitles) == 1: newSheetTitle = newSheetTitles[0]
+    if newSheetTitle and not oldSheetTitle: oldSheetTitle = oldSheetTitles[0]
+    (newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey) = FindTable(newWb, newSheetTitle, newKey, args.newFile, maxColumns)
+    newTitle = newSheet.title
+    if iNewHeaders is None:
+        raise ValueError(f"[ERROR] Could not find header row in sheet '{newTitle}' in newFile: '{args.newFile}'")
+    # Disable the ability to compare trailing rows, because it is error prone.
     if iNewTrailing < len(newRows):
         Die(f"Trailing non-table rows found at row {iNewTrailing+1}\n"
             + f" in sheet '{newTitle}' in newFile: '{args.newFile}'"
@@ -1260,10 +1251,6 @@ in newFile.''')
     if args.newAppend:
         NewAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
             newSheet, iNewHeaders, iNewTrailing, jNewKey, outFile)
-        sys.exit(0)
-    if args.grab:
-        GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
-            args.grab, outFile)
         sys.exit(0)
 
     ignoreHeaders = args.ignore if args.ignore else []
