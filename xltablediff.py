@@ -760,7 +760,6 @@ def NewAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
             c = outSheet.cell(iOut+1, jOld+1, copy.copy(oldCell.value))
             CopyCellAttributes(c, oldCell)
         iOut += 1
-
     assert( iOut == nOldRows - (iOldTrailing - iOldHeaders) + (iNewTrailing - iNewHeaders) )
     ##### Now can can use OldAppendTable to append the newRows, 
     # because we know that the tables are aligned.
@@ -780,8 +779,9 @@ def CellToString(cell):
 ##################### GrabTable #####################
 def GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
         grabHeaders, outFile, filter):
-    ''' Grab the comma-separated columnsWanted and output them 
-    (with header row) as CSV to stdout.
+    ''' Grab wanted columns and output them 
+    (with header row) as CSV to stdout.  grabHeaders specifies
+    the wanted columns in a comma-separated list.
     If filter is provided, it must be a python boolean expression
     and only rows for which filter is true are included.
     '''
@@ -886,6 +886,85 @@ def OldAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
     # Write the output file
     # oldSheet.title += '-Appended'
     oldWb.save(outFile)
+    sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n\n")
+
+##################### SelectTable #####################
+def SelectTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
+        colFilter, outFile, rowFilter):
+    ''' From old table, select columns for which colFilter is True-ish,
+    optionally including only desired rows (specified by rowFilter)..
+    Write the resulting spreadsheet to outFile.
+    colFilter must be a boolean expression, specified by the '--select' option,
+    which uses the variable 'h', which will be successively bound
+    to each header (a/k/a column name).  For example, this colFilter:
+        --select 'h in ["wanted1", "wanted2"]'
+    will select only columns named "wanted1" and "wanted2".
+    This colFilter:
+        --select 'h != "unWanted1"'
+    will select all columns except "unWanted1".
+    rowFilter (if provided) must be a boolean expression in which
+    the column names are bound to the current row values.
+    The value of a column whose name would not be a legal Python variable 
+    can be accessed like this: v['my-bad-column-name']
+    '''
+    # The strategy is to make a new worksheet having the resulting rows
+    # that we want, delete unwanted columns, and then write it out.
+    outWb = openpyxl.Workbook()
+    outWb.iso_dates = True
+    outSheet = outWb.active
+    oldCellRows = tuple(oldSheet.rows)
+    nOldRows = len(oldCellRows)
+    oldHeaderCells = oldCellRows[iOldHeaders]   # Tuple
+    nOldHeaders = len(oldHeaderCells)
+    oldHeaders = [ CellToString(c) for c in oldHeaderCells ]
+    oldHeaderIndex = { oldHeaders[i]: i for i in range(nOldHeaders) }
+    ##### First copy all oldRows (including headers) before the table body
+    # iOut is the 0-based row index in outSheet where we'll be writing:
+    iOut = 0
+    for iOld in range(iOldHeaders+1):
+        for jOld in range(nOldHeaders):
+            oldCell = oldSheet.cell(iOld+1, jOld+1)
+            c = outSheet.cell(iOut+1, jOld+1, copy.copy(oldCell.value))
+            CopyCellAttributes(c, oldCell)
+        iOut += 1
+    iOutHeaders = iOut-1
+    assert( iOutHeaders == iOldHeaders )
+    ##### Now copy the table body, skipping unwanted rows.
+    for iOld in range(iOldHeaders+1, iOldTrailing):
+        kOld = oldSheet.cell(iOld+1, jOldKey+1).value
+        #### Skip unwanted row
+        row = [ CellToString(c) for c in oldCellRows[iOld] ]
+        # Make v be a dictionary that maps the column name to the value
+        assert(len(row) == len(oldHeaders))
+        v =   { oldHeaders[j]: row[j] for j in range(len(oldHeaders)) }
+        env = { oldHeaders[j]: row[j] for j in range(len(oldHeaders)) }
+        # If a column name is not a permissible variable name in python,
+        # the value can be accessed by v['bad-var-name']:
+        env['v'] = v
+        if iOld>iOldHeaders and rowFilter and not(eval(rowFilter, env)): continue
+        #### The row is wanted.  Copy it.
+        for jOld in range(nOldHeaders):
+            oldCell = oldSheet.cell(iOld+1, jOld+1)
+            c = outSheet.cell(iOut+1, jOld+1, copy.copy(oldCell.value))
+            CopyCellAttributes(c, oldCell)
+        iOut += 1
+    iOutTrailing = iOut
+    ##### Copy any trailing oldRows.
+    for iOld in range(iOldTrailing, nOldRows):
+        for jOld in range(nOldHeaders):
+            oldCell = oldSheet.cell(iOld+1, jOld+1)
+            c = outSheet.cell(iOut+1, jOld+1, copy.copy(oldCell.value))
+            CopyCellAttributes(c, oldCell)
+        iOut += 1
+    ##### Now delete unwanted columns.
+    # Delete from right to left, so that the column numbers
+    # don't change as we are deleting columns.
+    for j in range(len(oldHeaders)-1, -1, -1):
+        env = { 'h': oldHeaders[j] }
+        if colFilter and not(eval(colFilter, env)): 
+            outSheet.delete_cols(j+1)
+    ##### Write the result
+    outWb.save(outFile)
     sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n\n")
 
 ##################### MergeTable #####################
@@ -1131,18 +1210,33 @@ in newFile.''')
                     help='New spreadsheet (*.xlsx)', nargs='?', default='')
     argParser.add_argument('--grab',
                     help='Comma-separated list of columns to be output as CSV with header row.')
+    argParser.add_argument('--select',
+        help='''Write out a copy of the given sheet, selecting 
+            columns for which the SELECT expression is True-ish.  The SELECT 
+            expression should use "h" as the current column name.  For 
+            example, a SELECT expression of 
+            \'h in ["wanted1", "wanted2"]\' will select only columns 
+            named "wanted1" and "wanted2".  A SELECT expression of
+            \'h != "unWanted1"\' will select all columns *except* "unWanted1".
+            The --filter option may also be used to filter rows.
+            ''')
     argParser.add_argument('--filter',
-                    help='Python expression.  If provided and true, only output rows (except the header row, which is always output) for which FILTER evaluates to true-ish.  In FILTER, column names can be used as python variables.  If a column name would not be a valid python variable, it can be accessed as v["my-bad-var"].  This option only works with --grab.')
+                    help='Python expression.  If provided and true, only output rows (except the header row, which is always output) for which FILTER evaluates to true-ish.  In FILTER, column names can be used as python variables.  If a column name would not be a valid python variable, it can be accessed as v["my-bad-var"].  This option only works with --grab or --select.')
     argParser.add_argument('--out',
                     help='Output file of differences.  This "option" is actually REQUIRED unless the --grab option is used.')
     # sys.stderr.write(f"[INFO] calling print_using....\n")
     args = argParser.parse_args()
+    if args.select:
+        if args.grab:
+            raise ValueError(f"[ERROR] --select cannot be used with --grab option.")
+        if args.newFile:
+            raise ValueError(f"[ERROR] newFile.xlsx must not be specified when --select option is used.")
     if args.grab:
         if args.newFile:
             raise ValueError(f"[ERROR] newFile.xlsx must not be specified when --grab option is used.")
         if args.out:
             raise ValueError(f"[ERROR] --out option cannot be used with --grab option.")
-    if (not args.newFile) and (not args.grab):
+    if (not args.newFile) and (not args.grab) and (not args.select):
         raise ValueError(f"[ERROR] newFile.xlsx must be specified.")
     if (not args.out) and (not args.grab):
         raise ValueError(f"[ERROR] --out=outFile.xlsx option is REQUIRED.")
@@ -1204,6 +1298,10 @@ in newFile.''')
             + f" in sheet '{oldTitle}' in oldFile: '{args.oldFile}'"
             + f" Trailing rows are now disallowed because they were\n"
             + f" found to be error prone.")
+    if args.select:
+        SelectTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
+            args.select, outFile, args.filter)
+        sys.exit(0)
     if args.grab:
         GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
             args.grab, outFile, args.filter)
