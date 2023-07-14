@@ -888,6 +888,33 @@ def OldAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
     oldWb.save(outFile)
     sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n\n")
 
+##################### RenameTable #####################
+def RenameTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
+        renameColumns, outFile):
+    ''' Rename columns in the given table, and write out the new
+    table.  renameColumns must be a list of 'NEW=OLD' strings, 
+    specifying the new and old column names.
+    '''
+    # The strategy is to make a new worksheet having the resulting rows
+    # that we want, delete unwanted columns, and then write it out.
+    oldCellRows = tuple(oldSheet.rows)
+    oldHeaderCells = oldCellRows[iOldHeaders]   # Tuple
+    nOldHeaders = len(oldHeaderCells)
+    oldHeaders = [ CellToString(c) for c in oldHeaderCells ]
+    oldHeaderIndex = { oldHeaders[i]: i for i in range(nOldHeaders) }
+    for newOld in renameColumns:
+        newOldList = [ h.strip() for h in newOld.split('=') ]
+        if len(newOldList) != 2: Die(f"Bad 'NEW=OLD' syntax in --rename option: '{newOld}'")
+        newHeader = newOldList[0]
+        oldHeader = newOldList[1]
+        if oldHeader not in oldHeaderIndex:
+            Die(f"Unknown column name: '{oldHeader}'")
+        j = oldHeaderIndex[oldHeader]
+        c = oldSheet.cell(iOldHeaders+1, j+1, newHeader)
+    ##### Write the result
+    oldWb.save(outFile)
+    sys.stderr.write(f"[INFO] Wrote: '{outFile}'\n\n")
+
 ##################### SelectTable #####################
 def SelectTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
         colFilter, outFile, rowFilter):
@@ -1210,6 +1237,10 @@ in newFile.''')
                     help='New spreadsheet (*.xlsx)', nargs='?', default='')
     argParser.add_argument('--grab',
                     help='Comma-separated list of columns to be output as CSV with header row.')
+    argParser.add_argument('--rename', action='append',
+        help='''Rename a column.  The new and old column names are
+            specified as \'NEW=OLD\'.  This option may be repeated.
+            This option cannot be used with other options.''')
     argParser.add_argument('--select',
         help='''Write out a copy of the given sheet, selecting 
             columns for which the SELECT expression is True-ish.  The SELECT 
@@ -1226,6 +1257,11 @@ in newFile.''')
                     help='Output file of differences.  This "option" is actually REQUIRED unless the --grab option is used.')
     # sys.stderr.write(f"[INFO] calling print_using....\n")
     args = argParser.parse_args()
+    if args.rename:
+        if args.grab or args.select or args.merge or args.oldAppend or args.newAppend:
+            raise ValueError(f"[ERROR] --rename cannot be used with other options.")
+        if args.newFile:
+            raise ValueError(f"[ERROR] newFile.xlsx must not be specified when --rename option is used.")
     if args.select:
         if args.grab:
             raise ValueError(f"[ERROR] --select cannot be used with --grab option.")
@@ -1236,7 +1272,7 @@ in newFile.''')
             raise ValueError(f"[ERROR] newFile.xlsx must not be specified when --grab option is used.")
         if args.out:
             raise ValueError(f"[ERROR] --out option cannot be used with --grab option.")
-    if (not args.newFile) and (not args.grab) and (not args.select):
+    if (not args.newFile) and (not args.grab) and (not args.select) and (not args.rename):
         raise ValueError(f"[ERROR] newFile.xlsx must be specified.")
     if (not args.out) and (not args.grab):
         raise ValueError(f"[ERROR] --out=outFile.xlsx option is REQUIRED.")
@@ -1298,6 +1334,10 @@ in newFile.''')
             + f" in sheet '{oldTitle}' in oldFile: '{args.oldFile}'"
             + f" Trailing rows are now disallowed because they were\n"
             + f" found to be error prone.")
+    if args.rename:
+        RenameTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
+            args.rename, outFile)
+        sys.exit(0)
     if args.select:
         SelectTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
             args.select, outFile, args.filter)
