@@ -421,6 +421,8 @@ def CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex):
         iEmpty = next( (i for i in range(len(newHeaders)) if newHeaders[i] == ''), -1 )
         letter = openpyxl.utils.cell.get_column_letter(iEmpty+1)
         raise ValueError(f"[ERROR] Empty header in column {letter} of new table\n")
+    assert(len(oldHeaders) == len(set(oldHeaders)))
+    assert(len(newHeaders) == len(set(newHeaders)))
     # Build up the diffHeaders from the newHeaders plus any deleted oldHeaders
     diffHeaders = []
     diffHeaderMarks = []    # {=, -, +}
@@ -445,6 +447,8 @@ def CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex):
                 j += 1
         else:
             diffHeaderMarks.append('+')
+    assert(len(diffHeaders) == len(set(oldHeaders).union(set(newHeaders))))
+    assert(len(diffHeaders) == len(diffHeaderMarks))
     return diffHeaderMarks, diffHeaders
 
 ##################### CompareBody #####################
@@ -609,7 +613,7 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, jOldKey,
     # Warn(f"newHeaders: {repr(newHeaders)}")
     newHeaderIndex = { v: i for i, v in enumerate(newHeaders) }
     diffHeaderMarks, diffHeaders = CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex)
-    # nDiffHeader does not include the marker column.
+    # nDiffHeaders does not include the marker column.
     # The total number of columns in diffRows will be nDiffHeaders+1.
     nDiffHeaders = len(diffHeaders)     
     diffRows = []
@@ -628,7 +632,7 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, jOldKey,
     # sys.stderr.write(f"iOldTrailing: {iOldTrailing} iNewTrailing: {iNewTrailing}\n")
     ###### Add old and new headers to diffRows.
     nColumnChanges = 0
-    if len(diffHeaders) == len(oldHeaders):
+    if len(diffHeaders) == len(oldHeaders) and len(diffHeaders) == len(newHeaders):
         # No columns were added or deleted.
         iDiffBody = iDiffHeaders + 1    # Only one header row after all
         diffRow = [ '=' ]
