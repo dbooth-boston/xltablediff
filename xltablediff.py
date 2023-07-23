@@ -264,8 +264,7 @@ def LoadWorkBook(file, data_only=True):
         s = str(e)
         # Info(f"Caught exception: '{s}'\n")
         if s.startswith('Value does not match pattern'):
-            sys.stderr.write(f"[ERROR] Unable to load file: '{file}'\n If a sheet uses a filter, try eliminating the filter.\n")
-            sys.exit(1)
+            Die(f"Unable to load file: '{file}'\n If a sheet uses a filter, try eliminating the filter.\n")
         raise e
     return wb
 
@@ -323,15 +322,15 @@ def FindTable(wb, wantedTitle, key, file, maxColumns):
         if sheet:
             break
     if not sheet and wantedTitle:
-            sys.stderr.write(f"[ERROR] Sheet not found: '{wantedTitle}'\n")
-            sys.stderr.write(f" in file: '{file}'\n")
-            sys.exit(1)
+            Die(f"Sheet not found: '{wantedTitle}'\n"
+                + f" in file: '{file}'\n")
     if iHeaders is None:
         withKey = ""
         if key: withKey = f" with key '{key}'"
-        sys.stderr.write(f"[ERROR] Unable to find header row{withKey}\n")
-        sys.stderr.write(f" in file: '{file}'\n")
-        sys.stderr.write(f" This can be caused by duplicate column names\n or by having data in a column beyond the table.\n")
+        Die(f"Unable to find header row{withKey}\n"
+            + f" in file: '{file}'\n"
+            + f" This can be caused by duplicate column names\n"
+            + f" or by having data in a column beyond the table.\n")
         pKeys = " ".join(sorted(map((lambda v: f"'{v}'"), allPossibleKeys)))
         if key and allPossibleKeys:
             sys.stderr.write(f" Potential keys: {pKeys}\n")
@@ -340,15 +339,13 @@ def FindTable(wb, wantedTitle, key, file, maxColumns):
     originalKey = key
     if key: 
         if key not in rows[iHeaders]:
-            sys.stderr.write(f"[ERROR] Key not found in header row {iHeaders+1}: '{key}'\n")
-            sys.stderr.write(f" in file: '{file}'  sheet: '{sheet.title}\n")
-            sys.exit(1)
+            Die(f"Key not found in header row {iHeaders+1}: '{key}'\n"
+                + f" in file: '{file}'  sheet: '{sheet.title}\n")
         possibleKeys = [key]
         allPossibleKeys = set([key])
     elif not possibleKeys:
-        sys.stderr.write(f"[ERROR] No key found in header row {iHeaders+1}\n")
-        sys.stderr.write(f" in file: '{file}'  sheet: '{sheet.title}\n")
-        sys.exit(1)
+        Die(f"No key found in header row {iHeaders+1}\n"
+            + f" in file: '{file}'  sheet: '{sheet.title}\n")
     elif len(possibleKeys) == 1: key = possibleKeys[0]
     else:
         # Look for the first header ending with "id":
@@ -507,8 +504,8 @@ def CompareBody(diffRows, diffHeaders, ignoreHeaders,
     remainingHeaders = ignoreSet.difference(commonHeaders)
     if remainingHeaders:
         h = " ".join(sorted(remainingHeaders))
-        sys.stderr.write(f"[ERROR] Bad --ignore column name(s): {h}\n Column headers specified with --ignore must exist in both old and new tables\n")
-        sys.exit(1)
+        Die(f"Bad --ignore column name(s): {h}\n"
+            + f" Column headers specified with --ignore must exist in both old and new tables\n")
     compareHeaders = commonHeaders.difference(ignoreSet)
     # Now copy the newRows into diffRows, marking each diff row 
     # as one of {=, -, +, c-, c+}.  Each time a new row has
@@ -1090,7 +1087,7 @@ def TrimSheet(sheet, maxColumns, filename):
             iUsed = FirstNonEmpty(column)
             if iUsed >= 0:
                 letter = openpyxl.utils.cell.get_column_letter(iUsed+1)
-                sys.stderr.write(f"[WARNING] File '{filename}' sheet '{sheet.title}': Deleting column {j+1} ({letter}) with non-empty data\n")
+                Warn(f"File '{filename}' sheet '{sheet.title}': Deleting column {j+1} ({letter}) with non-empty data\n")
                 break
         sheet.delete_cols(maxColumns, sheet.max_column-maxColumns)
         # Get these again, in case they changed:
@@ -1099,7 +1096,7 @@ def TrimSheet(sheet, maxColumns, filename):
         rows = list(sheet.rows)
         nRows = len(rows)
     if nColumns > 100 and not maxColumns:
-        sys.stderr.write(f"[WARNING] File '{filename}' sheet '{sheet.title}' has a large number of columns: {nColumns}.\n Trimming empty trailing columns may take a long time\n If you are certain that no more than N columns are used in any sheet, you can\n specify the '--maxColumns=N' option (where N is an integer) to delete\n all extra columns.")
+        Warn(f"File '{filename}' sheet '{sheet.title}' has a large number of columns: {nColumns}.\n Trimming empty trailing columns may take a long time\n If you are certain that no more than N columns are used in any sheet, you can\n specify the '--maxColumns=N' option (where N is an integer) to delete\n all extra columns.")
     # sys.stderr.write(f"Trimming empty rows and columns. oldNRows: {oldNRows} oldNColumns: {oldNColumns} nRows: {nRows} nColumns: {nColumns} ...\n")
     try:
         # Delete empty trailing rows:
@@ -1126,7 +1123,7 @@ def TrimSheet(sheet, maxColumns, filename):
             sheet.delete_cols(nColumns)
             nColumns -= 1
             if oldNColumns-nColumns >= 10 and nColumns >= 100 and not warned:
-                sys.stderr.write(f"[WARNING] '{filename}' sheet '{sheet.title}': Trimming empty trailing columns from {oldNColumns} columns.\n If this takes too long, consider the '--maxColumns=N' option ...\n")
+                Warn(f"'{filename}' sheet '{sheet.title}': Trimming empty trailing columns from {oldNColumns} columns.\n If this takes too long, consider the '--maxColumns=N' option ...\n")
                 warned = True
         if nRows != oldNRows or nColumns != oldNColumns:
             Info(f"File '{filename}' sheet '{sheet.title}': Trimmed {oldNRows-nRows} empty trailing rows and {oldNColumns-nColumns} columns\n")
@@ -1309,22 +1306,19 @@ in newFile.''')
     if args.key:
         oldNewKeys = [ k.strip() for k in args.key.split("=") ]
         if len(oldNewKeys) > 2:
-            sys.stderr.write(f"[ERROR] Too many keys specified: '--key {args.key}'\n")
-            sys.exit(1)
+            Die(f"Too many keys specified: '--key {args.key}'\n")
         oldKey = oldNewKeys[0]
         newKey = oldNewKeys[0]
         if len(oldNewKeys) > 1:
             newKey = oldNewKeys[1]
         if oldKey == '' or newKey == '':
-            sys.stderr.write(f"[ERROR] Key must not be empty: '--key {args.key}'\n")
-            sys.exit(1)
+            Die(f"Key must not be empty: '--key {args.key}'\n")
     outFile = args.out
     if (not outFile) and (not args.grab):
         sys.stderr.write("[ERROR] Output filename must be specified: --out=outFile.xlsx\n")
         sys.exit(1)
     if outFile == args.oldFile or outFile == args.newFile:
-        sys.stderr.write(f"[ERROR] Output filename must differ from newFile and oldFile: {outFile}\n")
-        sys.exit(1)
+        Die(f"Output filename must differ from newFile and oldFile: {outFile}\n")
     maxColumns = -1
     if args.maxColumns: maxColumns = args.maxColumns
     if maxColumns == -1: maxColumns = 100
@@ -1385,18 +1379,14 @@ in newFile.''')
             + f" found to be error prone.")
     Info(f"In '{args.newFile}' sheet '{newTitle}' found table in rows {iNewHeaders+1}-{iNewTrailing} columns 1-{len(newRows[0])}\n")
     if args.oldAppend and (args.merge or args.mergeAll):
-        sys.stderr.write(f"[ERROR] Options --oldAppend and --merge cannot be used together.\n")
-        sys.exit(1)
+        Die(f"Options --oldAppend and --merge cannot be used together.\n")
     if args.newAppend and (args.merge or args.mergeAll):
-        sys.stderr.write(f"[ERROR] Options --newAppend and --merge cannot be used together.\n")
-        sys.exit(1)
+        Die(f"Options --newAppend and --merge cannot be used together.\n")
     if args.newAppend and args.oldAppend:
-        sys.stderr.write(f"[ERROR] Options --newAppend and --oldAppend cannot be used together.\n")
-        sys.exit(1)
+        Die(f"Options --newAppend and --oldAppend cannot be used together.\n")
     if args.mergeAll or args.merge:
         if args.mergeAll and args.merge:
-            sys.stderr.write(f"[ERROR] Options --mergeAll and --merge cannot be used together\n")
-            sys.exit(1)
+            Die(f"Options --mergeAll and --merge cannot be used together\n")
         # sys.stderr.write(f"args.merge: {repr(args.merge)}\n")
         oldHeadersSet = set(oldRows[iOldHeaders])
         newHeadersSet = set(newRows[iNewHeaders])
@@ -1409,14 +1399,11 @@ in newFile.''')
             for h in args.merge:
                 # sys.stderr.write(f"h: {repr(h)}\n")
                 if h == oldKey or h == newKey:
-                    sys.stderr.write(f"[ERROR] Key columns cannot be merged: --merge={'h'}\n")
-                    sys.exit(1)
+                    Die(f"Key columns cannot be merged: --merge={'h'}\n")
                 if (h not in oldHeadersSet):
-                    sys.stderr.write(f"[ERROR] Column specified in --merge='{h}' does not exist in old table.\n")
-                    sys.exit(1)
+                    Die(f"Column specified in --merge='{h}' does not exist in old table.\n")
                 if (h not in newHeadersSet):
-                    sys.stderr.write(f"[ERROR] Column specified in --merge='{h}' does not exist in new table.\n")
-                    sys.exit(1)
+                    Die(f"Column specified in --merge='{h}' does not exist in new table.\n")
                 mergeHeaders.add(h)
         MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
             newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey, outFile, mergeHeaders)
