@@ -265,7 +265,7 @@ def LoadWorkBook(file, data_only=True):
         # Info(f"Caught exception: '{s}'\n")
         if s.startswith('Value does not match pattern'):
             Die(f"Unable to load file: '{file}'\n If a sheet uses a filter, try eliminating the filter.\n")
-        raise e
+        Die(f"{str(e)}")
     return wb
 
 ##################### FindTable #####################
@@ -414,11 +414,11 @@ def CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex):
     if '' in oldHeaders:
         iEmpty = next( (i for i in range(len(oldHeaders)) if oldHeaders[i] == ''), -1 )
         letter = openpyxl.utils.cell.get_column_letter(iEmpty+1)
-        raise ValueError(f"[ERROR] Empty header in column {letter} of old table\n")
+        Die(f"Empty header in column {letter} of old table\n")
     if '' in newHeaders:
         iEmpty = next( (i for i in range(len(newHeaders)) if newHeaders[i] == ''), -1 )
         letter = openpyxl.utils.cell.get_column_letter(iEmpty+1)
-        raise ValueError(f"[ERROR] Empty header in column {letter} of new table\n")
+        Die(f"Empty header in column {letter} of new table\n")
     assert(len(oldHeaders) == len(set(oldHeaders)))
     assert(len(newHeaders) == len(set(newHeaders)))
     # Build up the diffHeaders from the newHeaders plus any deleted oldHeaders
@@ -467,9 +467,9 @@ def CompareBody(diffRows, diffHeaders, ignoreHeaders,
     for i, v in enumerate(oldKeys):
         r = i+iOldHeaders+1 
         if v == '':
-            raise  ValueError(f"[ERROR] Table in oldFile contains an empty key at row {r+1}\n")
+            Die(f"Table in oldFile contains an empty key at row {r+1}\n")
         if v in oldKeyIndex:
-            raise  ValueError(f"[ERROR] Table in oldFile contains a duplicate key on row {r+1}: '{v}'\n")
+            Die(f"Table in oldFile contains a duplicate key on row {r+1}: '{v}'\n")
         oldKeyIndex[v] = r
     # sys.stderr.write(f"jNewKey: {jNewKey} iNewHeaders: {iNewHeaders} iNewTrailing: {iNewTrailing}\n")
     newKeys = [ newRows[i][jNewKey] for i in range(iNewHeaders+1, iNewTrailing) ]
@@ -480,9 +480,9 @@ def CompareBody(diffRows, diffHeaders, ignoreHeaders,
     for i, v in enumerate(newKeys):
         r = i+iNewHeaders+1 
         if v == '':
-            raise  ValueError(f"[INTERNAL ERROR] Table in newFile contains an empty key at row {r+1}\n")
+            raise ValueError(f"[INTERNAL ERROR] Table in newFile contains an empty key at row {r+1}\n")
         if v in newKeyIndex:
-            raise  ValueError(f"[ERROR] Table in newFile contains a duplicate key on row {r+1}: '{v}'\n")
+            Die(f"Table in newFile contains a duplicate key on row {r+1}: '{v}'\n")
         newKeyIndex[v] = r
     # Make the diff list of rows.
     # diffRows will not include the header row, but each row in it
@@ -800,7 +800,7 @@ def GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
     wantedList = [ h for h in wantedList if h != '' ]
     nWanted = len(wantedList)
     if not nWanted:
-        raise ValueError(f"[ERROR] --grab option did not specify any column names")
+        Die(f"--grab option did not specify any column names")
     # Get the old headers
     oldCellRows = tuple(oldSheet.rows)
     oldHeaderCells = oldCellRows[iOldHeaders]   # Tuple
@@ -821,7 +821,7 @@ def GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
         for jWanted in range(nWanted):
             h = wantedList[jWanted]
             if h not in oldHeaderIndex:
-                raise ValueError(f"[ERROR] Column '{h}' not found in old sheet '{oldSheet.title}'")
+                Die(f"Column '{h}' not found in old sheet '{oldSheet.title}'")
             j = oldHeaderIndex[h]
             v = CellToString(oldCellRows[i][j])
             # print(f"i: {i} v: {repr(v)}")
@@ -1024,9 +1024,9 @@ def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
     for i in range(iNewHeaders+1, iNewTrailing):
         v = newRows[i][jNewKey]
         if v == '':
-            raise  ValueError(f"[ERROR] Table in newFile contains an empty key at row {i+1}\n")
+            Die(f"Table in newFile contains an empty key at row {i+1}\n")
         if v in newKeyIndex:
-            raise  ValueError(f"[ERROR] Table in newFile contains a duplicate key on row {i+1}: '{v}'\n")
+            Die(f"Table in newFile contains a duplicate key on row {i+1}: '{v}'\n")
         newKeyIndex[v] = i
     newHeaderIndex = { h: j for j, h in enumerate(newHeaders) }
     # Looping through columns first (instead of rows) because we can skip
@@ -1110,7 +1110,8 @@ def TrimSheet(sheet, maxColumns, filename):
             nRows -= 1
         if nRows == 0: nColumns = 0
     except AttributeError as e:
-       raise AttributeError(str(e) + f"\n at sheet '{sheet.title}' row {nRows}")
+        Die(f"AttributeError {str(e)}\n" 
+            + f" at sheet '{sheet.title}' row {nRows}")
     try:
         # Delete empty trailing columns:
         warned = False
@@ -1128,7 +1129,8 @@ def TrimSheet(sheet, maxColumns, filename):
         if nRows != oldNRows or nColumns != oldNColumns:
             Info(f"File '{filename}' sheet '{sheet.title}': Trimmed {oldNRows-nRows} empty trailing rows and {oldNColumns-nColumns} columns\n")
     except AttributeError as e:
-       raise AttributeError(str(e) + f"\n at sheet '{sheet.title}' column {nColumns}")
+        Die(f"AttributeError {str(e)}\n"
+            + f" at sheet '{sheet.title}' column {nColumns}")
     # Info(f"Copying header len: '{repr(len(newCellRows[iNewHeaders]))} nNewHeaders: '{repr(nNewHeaders)}'\n newCellValue Headers: {repr(newCellValues)}\n newHeaders: {repr(newHeaders)}\n")
 
 ##################### WriteDiffFile #####################
@@ -1274,27 +1276,27 @@ in newFile.''')
     quiet = args.quiet
     if args.rename:
         if args.grab or args.select or args.merge or args.oldAppend or args.newAppend:
-            raise ValueError(f"[ERROR] --rename cannot be used with other options.")
+            Die(f"--rename cannot be used with other options.")
         if args.newFile:
-            raise ValueError(f"[ERROR] newFile.xlsx must not be specified when --rename option is used.")
+            Die(f"newFile.xlsx must not be specified when --rename option is used.")
     if args.select:
         if args.grab:
-            raise ValueError(f"[ERROR] --select cannot be used with --grab option.")
+            Die(f"--select cannot be used with --grab option.")
         if args.newFile:
-            raise ValueError(f"[ERROR] newFile.xlsx must not be specified when --select option is used.")
+            Die(f"newFile.xlsx must not be specified when --select option is used.")
     if args.grab:
         if args.newFile:
-            raise ValueError(f"[ERROR] newFile.xlsx must not be specified when --grab option is used.")
+            Die(f"newFile.xlsx must not be specified when --grab option is used.")
         if args.out:
-            raise ValueError(f"[ERROR] --out option cannot be used with --grab option.")
+            Die(f"--out option cannot be used with --grab option.")
     if (not args.newFile) and (not args.grab) and (not args.select) and (not args.rename):
-        raise ValueError(f"[ERROR] newFile.xlsx must be specified.")
+        Die(f"newFile.xlsx must be specified.")
     if (not args.out) and (not args.grab):
-        raise ValueError(f"[ERROR] --out=outFile.xlsx option is REQUIRED.")
+        Die(f"--out=outFile.xlsx option is REQUIRED.")
     if args.sheet and args.oldSheet:
-        raise ValueError(f"[ERROR] Illegal combination of options: --sheet with --oldSheet")
+        Die(f"Illegal combination of options: --sheet with --oldSheet")
     if args.sheet and args.newSheet:
-        raise ValueError(f"[ERROR] Illegal combination of options: --sheet with --newSheet")
+        Die(f"Illegal combination of options: --sheet with --newSheet")
     oldSheetTitle = args.sheet
     newSheetTitle = args.sheet
     if args.oldSheet:
@@ -1327,7 +1329,7 @@ in newFile.''')
     ####### Determine sheets to compare
     oldSheetTitles = [ s.title for s in oldWb if (not oldSheetTitle) or s.title == oldSheetTitle ]
     if not oldSheetTitles:
-        raise ValueError(f"[ERROR] Sheet '{oldSheetTitle}' not found in oldFile: '{args.oldFile}'")
+        Die(f"Sheet '{oldSheetTitle}' not found in oldFile: '{args.oldFile}'")
     # Default to all matching sheet titles:
     if len(oldSheetTitles) == 1: oldSheetTitle = oldSheetTitles[0]
     ####### old Sheet:
@@ -1335,7 +1337,7 @@ in newFile.''')
     (oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey) = FindTable(oldWb, oldSheetTitle, oldKey, args.oldFile, maxColumns)
     oldTitle = oldSheet.title
     if iOldHeaders is None:
-        raise ValueError(f"[ERROR] Could not find header row in sheet '{oldSheetTitle}' in oldFile: '{args.oldFile}'")
+        Die(f"Could not find header row in sheet '{oldSheetTitle}' in oldFile: '{args.oldFile}'")
     Info(f"In '{args.oldFile}' sheet '{oldTitle}' found table in rows {iOldHeaders+1}-{iOldTrailing} columns 1-{len(oldRows[0])}\n")
     # Disable the ability to compare trailing rows, because this was found
     # to be error prone: if the table contained a blank row (or key), the 
@@ -1362,7 +1364,7 @@ in newFile.''')
     newWb = LoadWorkBook(args.newFile, data_only=False)
     newSheetTitles = [ s.title for s in newWb if (not newSheetTitle) or s.title == newSheetTitle ]
     if not newSheetTitles:
-        raise ValueError(f"[ERROR] Sheet '{newSheetTitle}' not found in newFile: '{args.newFile}'")
+        Die(f"Sheet '{newSheetTitle}' not found in newFile: '{args.newFile}'")
     if oldSheetTitle and not newSheetTitle: newSheetTitle = newSheetTitles[0]
     # Default to all matching sheet titles:
     if len(newSheetTitles) == 1: newSheetTitle = newSheetTitles[0]
@@ -1370,7 +1372,7 @@ in newFile.''')
     (newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey) = FindTable(newWb, newSheetTitle, newKey, args.newFile, maxColumns)
     newTitle = newSheet.title
     if iNewHeaders is None:
-        raise ValueError(f"[ERROR] Could not find header row in sheet '{newTitle}' in newFile: '{args.newFile}'")
+        Die(f"Could not find header row in sheet '{newTitle}' in newFile: '{args.newFile}'")
     # Disable the ability to compare trailing rows, because it is error prone.
     if iNewTrailing < len(newRows):
         Die(f"Trailing non-table rows found at row {iNewTrailing+1}\n"
