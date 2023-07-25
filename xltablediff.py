@@ -597,12 +597,13 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, jOldKey,
     ''' Compare the old and new tables, and any leading or trailing rows.  
     Returns:
         diffRows = Rows of diff cells.  The first cell of each row is
-            a marker with one of: {=, +, -, c-, c+}.
+            a marker with one of: {#, =, +, -, c-, c+}.
         iDiffHeaders = Index of the first header row.  There will be two
             header rows (old and new) if any headers changed.
         iDiffBody = Index of the table body (either iDiffHeaders+1
             or iDiffHeaders+2).
         iDiffTrailing = Index of any trailing rows after the table, if any.
+        jDiffKey = Index of key column in diffRows
     '''
     ###### Compare the headers, i.e., the column names.
     # This is done first to figure out how many resulting columns we'll need.
@@ -1266,6 +1267,8 @@ in newFile.''')
             ''')
     argParser.add_argument('--filter',
                     help='Python expression.  If provided and true, only output rows (except the header row, which is always output) for which FILTER evaluates to true-ish.  In FILTER, column names can be used as python variables.  If a column name would not be a valid python variable, it can be accessed as v["my-bad-var"].  This option only works with --grab or --select.')
+    argParser.add_argument('--changed', action='store_true',
+                    help='''List changed keys, preceded by the key header''')
     argParser.add_argument('-q', '--quiet', action='store_true',
                     help='''No error message, but set exit code on error''')
     argParser.add_argument('--out',
@@ -1429,10 +1432,29 @@ in newFile.''')
         newRows, iNewHeaders, iNewTrailing, jNewKey, ignoreHeaders, command)
     Info(f"{nChanges} total differences found")
     oldKey = oldRows[iOldHeaders][jOldKey]
+    newKey = newRows[iNewHeaders][jNewKey]
+    if args.changed:
+
+        WriteChanged(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, newKey)
     WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, oldKey, ignoreHeaders, outFile)
     if nChanges == 0: sys.exit(0)
     else: sys.exit(1)
 
+############################## WriteChanged ##################################
+def WriteChanged(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, newKey):
+    ''' To stdout, write newKey as a header line, then write the keys of 
+        rows that changed, one per line.  The result will be parsable
+        as a CSV file with one column.
+    '''
+    # Find the key column in diffRows
+    diffHeaders = diffRows[iDiffBody-1] # New headers
+    jDiffKey = next( (j for j in range(1, len(diffHeaders)) if diffHeaders[j] == newKey), len(diffHeaders) )
+    assert(jDiffKey < len(diffHeaders))
+    print(newKey)
+    for i in range(iDiffBody, iDiffTrailing):
+        diffRow = diffRows[i]
+        if diffRow[0] in ['-', '+', 'c-']:
+            print(diffRow[jDiffKey])
 
 ############################################################################
 ############################## simplediff ##################################
