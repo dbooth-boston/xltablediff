@@ -1267,6 +1267,8 @@ in newFile.''')
             ''')
     argParser.add_argument('--filter',
                     help='Python expression.  If provided and true, only output rows (except the header row, which is always output) for which FILTER evaluates to true-ish.  In FILTER, column names can be used as python variables.  If a column name would not be a valid python variable, it can be accessed as v["my-bad-var"].  This option only works with --grab or --select.')
+    argParser.add_argument('--unionKeys', action='store_true',
+                    help='''List all keys (old and new), preceded by the key header''')
     argParser.add_argument('--changed', action='store_true',
                     help='''List changed keys, preceded by the key header''')
     argParser.add_argument('-q', '--quiet', action='store_true',
@@ -1435,25 +1437,30 @@ in newFile.''')
     newKey = newRows[iNewHeaders][jNewKey]
     if args.changed:
 
-        WriteChanged(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, newKey)
+        WriteChanged(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, newKey, False)
+    elif args.unionKeys:
+        WriteChanged(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, newKey, True)
     WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, oldKey, ignoreHeaders, outFile)
     if nChanges == 0: sys.exit(0)
     else: sys.exit(1)
 
 ############################## WriteChanged ##################################
-def WriteChanged(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, newKey):
+def WriteChanged(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, newKey, unionKeys):
     ''' To stdout, write newKey as a header line, then write the keys of 
-        rows that changed, one per line.  The result will be parsable
-        as a CSV file with one column.
+        rows that changed (if unionKeys is falsey), one per line.  The result 
+        will be parsable as a CSV file with one column.
+        If unionKeys is true, all keys (old and new) will be included.
     '''
     # Find the key column in diffRows
     diffHeaders = diffRows[iDiffBody-1] # New headers
     jDiffKey = next( (j for j in range(1, len(diffHeaders)) if diffHeaders[j] == newKey), len(diffHeaders) )
     assert(jDiffKey < len(diffHeaders))
     print(newKey)
+    markersWanted = ['-', '+', 'c-']
+    if unionKeys: markersWanted = ['=', '-', '+', 'c-']
     for i in range(iDiffBody, iDiffTrailing):
         diffRow = diffRows[i]
-        if diffRow[0] in ['-', '+', 'c-']:
+        if diffRow[0] in markersWanted:
             print(diffRow[jDiffKey])
 
 ############################################################################
