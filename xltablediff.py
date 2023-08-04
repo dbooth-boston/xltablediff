@@ -87,6 +87,10 @@ contains a marker indicating whether the row changed:
     =   Row unchanged (excluding columns added or deleted)
     c-  Row changed: this row shows the old content
     c+  Row changed: this row shows the new content
+
+Exit status:
+  0 for no differences (if tables were compared) and no error
+  1 for differences (if tables were compared) or error
 '''
 
 # Strategy:
@@ -345,7 +349,7 @@ def FindTable(wb, wantedTitle, key, file, maxColumns):
         allPossibleKeys = set([key])
     elif not possibleKeys:
         Die(f"No key found in header row {iHeaders+1}\n"
-            + f" in file: '{file}'  sheet: '{sheet.title}\n")
+            + f" in file: '{file}'  sheet: '{sheet.title}'\n")
     elif len(possibleKeys) == 1: key = possibleKeys[0]
     else:
         # Look for the first header ending with "id":
@@ -1272,7 +1276,7 @@ in newFile.''')
     argParser.add_argument('--changed', action='store_true',
                     help='''List changed keys, preceded by the key header''')
     argParser.add_argument('-q', '--quiet', action='store_true',
-                    help='''No error message, but set exit code on error''')
+                    help='''No error message, but set exit code on error or diffs''')
     argParser.add_argument('--out',
                     help='Output file of differences.  This "option" is actually REQUIRED unless the --grab option is used.')
     # Info(f"calling print_using....\n")
