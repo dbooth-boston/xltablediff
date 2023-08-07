@@ -9,6 +9,9 @@
 # Merge test:
   xltablediff.py  --key ID --merge Color test1old.xlsx test1new.xlsx --out test1merge.xlsx
 
+# Replace test:
+  xltablediff.py  --key ID --replace Color test1old.xlsx test1new.xlsx --out test1replace.xlsx
+
 # oldAppend test:
   xltablediff.py  --key ID --oldAppend test1old.xlsx test1new.xlsx --out test1oldAppend.xlsx
 
@@ -22,6 +25,7 @@ echo 'Comparing expected vs new results...'
 xltablediff.py  test1diff-expected.xlsx test1diff.xlsx --out /dev/null
 xltablediff.py  test1ignore-expected.xlsx test1ignore.xlsx --out /dev/null
 xltablediff.py  test1merge-expected.xlsx test1merge.xlsx --out /dev/null
+xltablediff.py  test1replace-expected.xlsx test1replace.xlsx --out /dev/null
 xltablediff.py  test1oldAppend-expected.xlsx test1oldAppend.xlsx --out /dev/null
 xltablediff.py  test1newAppend-expected.xlsx test1newAppend.xlsx --out /dev/null
 

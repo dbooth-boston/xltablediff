@@ -1012,10 +1012,11 @@ def SelectTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
 
 ##################### MergeTable #####################
 def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
-        newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey, outFile, mergeHeaders):
+        newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey, outFile, mergeHeaders, optionReplace):
     ''' Merge specified columns of new table to old table,
     modifying oldWb/oldSheet in place (in memory).
     Write the resulting spreadsheet to outFile.
+    If optionReplace is True, old values will be cleared before merging.
     '''
     oldHeaders = oldRows[iOldHeaders]
     newHeaders = newRows[iNewHeaders]
@@ -1047,16 +1048,18 @@ def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
             # value (with its original type).
             oldValue = Value(oldWsRows[i][jOld].value)
             oldKey = oldRow[jOldKey]
+            newValue = oldValue
+            if optionReplace: newValue = ''
             if oldKey in newKeyIndex:
                 newValue = Value(newWsRows[newKeyIndex[oldKey]][jNew].value)
-                if newValue != oldValue:
-                    oldWsRows[i][jOld].value = newValue
-                    if oldValue is None or oldValue == '':
-                        # New value
-                        oldWsRows[i][jOld].fill = fillAddCol
-                    else:
-                        # Value changed
-                        oldWsRows[i][jOld].fill = fillChange
+            if newValue != oldValue:
+                oldWsRows[i][jOld].value = newValue
+                if oldValue is None or oldValue == '':
+                    # New value
+                    oldWsRows[i][jOld].fill = fillAddCol
+                else:
+                    # Value changed
+                    oldWsRows[i][jOld].fill = fillChange
     # Write the output file
     # oldSheet.title += '-Merged'
     oldWb.save(outFile)
@@ -1247,6 +1250,10 @@ in newFile.''')
                     help='Output a copy of the old sheet, with values from the specifed MERGE column from the new table merged in.  Merging means that for any row in the old sheet having the same key in the new table, the MERGE column value is replaced by the value from the new table, even if that new value is empty.  Any row in the old sheet that does not have a corresponding key in the new table remains unchanged.  Any row in the new table that does not have a corresponding key in the old sheet is discarded.  This option may be repeated to merge more than one column.  The number of rows in the output file will be the same is in oldFile.')
     argParser.add_argument('--mergeAll', action='store_true',
                     help="Same as '--merge C' for all non-key columns C that are in both the old and new tables.")
+    argParser.add_argument('--replace', nargs=1, action='extend',
+                    help="Same as '--merge', except that all values of the specified column in oldTable are cleared before merging.")
+    argParser.add_argument('--replaceAll', action='store_true',
+                    help="Same as '--mergeAll' except that all non-key columns of newTable existing in oldTable are cleared in oldTable before merging.")
     argParser.add_argument('--maxColumns', type=int,
                     help='Delete all columns after column N, where N is an integer (origin 1).  0 means no limit.  Default: 100.')
     argParser.add_argument('oldFile', metavar='oldFile.xlsx', type=str,
@@ -1284,7 +1291,8 @@ in newFile.''')
     global quiet 
     quiet = args.quiet
     if args.rename:
-        if args.grab or args.select or args.merge or args.oldAppend or args.newAppend:
+        if args.grab or args.select or args.merge or args.mergeAll \
+                or args.replace or args.replaceAll or args.oldAppend or args.newAppend:
             Die(f"--rename cannot be used with other options.")
         if args.newFile:
             Die(f"newFile.xlsx must not be specified when --rename option is used.")
@@ -1395,19 +1403,23 @@ in newFile.''')
         Die(f"Options --newAppend and --merge cannot be used together.\n")
     if args.newAppend and args.oldAppend:
         Die(f"Options --newAppend and --oldAppend cannot be used together.\n")
-    if args.mergeAll or args.merge:
+    if args.mergeAll or args.merge or args.replaceAll or args.replace:
+        if args.replaceAll and args.replace:
+            Die(f"Options --replaceAll and --replace cannot be used together\n")
         if args.mergeAll and args.merge:
             Die(f"Options --mergeAll and --merge cannot be used together\n")
+        if (args.mergeAll or args.merge) and (args.replaceAll or args.replace):
+            Die(f"Options --merge/--mergeAll and --replace/--replaceAll cannot be used together\n")
         # sys.stderr.write(f"args.merge: {repr(args.merge)}\n")
         oldHeadersSet = set(oldRows[iOldHeaders])
         newHeadersSet = set(newRows[iNewHeaders])
-        mergeHeaders = set()
-        if args.mergeAll:
+        mergeHeaders = set(args.merge or args.replace)
+        if args.mergeAll or args.replaceAll:
             oldNonKeys = oldHeadersSet.difference(set([oldKey]))
             newNonKeys = newHeadersSet.difference(set([newKey]))
             mergeHeaders = oldNonKeys.intersection(newNonKeys)
         else:
-            for h in args.merge:
+            for h in sorted(mergeHeaders):
                 # sys.stderr.write(f"h: {repr(h)}\n")
                 if h == oldKey or h == newKey:
                     Die(f"Key columns cannot be merged: --merge={'h'}\n")
@@ -1416,8 +1428,10 @@ in newFile.''')
                 if (h not in newHeadersSet):
                     Die(f"Column specified in --merge='{h}' does not exist in new table.\n")
                 mergeHeaders.add(h)
+        # Merge or replace columns
         MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
-            newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey, outFile, mergeHeaders)
+            newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey, outFile, 
+            mergeHeaders, (args.replace or args.replaceAll))
         sys.exit(0)
     if args.oldAppend:
         OldAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
