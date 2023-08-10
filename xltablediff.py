@@ -1283,7 +1283,7 @@ in newFile.''')
     argParser.add_argument('--changed', action='store_true',
                     help='''List changed keys, preceded by the key header''')
     argParser.add_argument('-q', '--quiet', action='store_true',
-                    help='''No error message, but set exit code on error or diffs''')
+                    help='''No error message, but set exit code 0 for no diffs, 2 for diffs, 1 for error''')
     argParser.add_argument('--out',
                     help='Output file of differences.  This "option" is actually REQUIRED unless the --grab option is used.')
     # Info(f"calling print_using....\n")
@@ -1413,7 +1413,7 @@ in newFile.''')
         # sys.stderr.write(f"args.merge: {repr(args.merge)}\n")
         oldHeadersSet = set(oldRows[iOldHeaders])
         newHeadersSet = set(newRows[iNewHeaders])
-        mergeHeaders = set(args.merge or args.replace)
+        mergeHeaders = set(args.merge or args.replace or [])
         if args.mergeAll or args.replaceAll:
             oldNonKeys = oldHeadersSet.difference(set([oldKey]))
             newNonKeys = newHeadersSet.difference(set([newKey]))
@@ -1460,7 +1460,7 @@ in newFile.''')
         WriteChanged(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, newKey, True)
     WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, oldKey, ignoreHeaders, outFile)
     if nChanges == 0: sys.exit(0)
-    else: sys.exit(1)
+    else: sys.exit(2)
 
 ############################## WriteChanged ##################################
 def WriteChanged(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, newKey, unionKeys):
