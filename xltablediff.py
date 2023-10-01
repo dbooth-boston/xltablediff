@@ -12,8 +12,8 @@
 # and after the tables.   Those rows are compared as lines, separately from the
 # table comparison.
 #
-# The old and new tables must both have a key column of
-# the same name, which is specified by the --key option.  
+# The old and new tables must both have a corresponding key column,
+# which is specified by the --key option.  
 #
 # Optionally, columns from the new table can be merged or appended into the
 # old table (using the --merge, --oldAppend or --newAppend options).
@@ -800,6 +800,8 @@ def GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
     the wanted columns in a comma-separated list.
     If filter is provided, it must be a python boolean expression
     and only rows for which filter is true are included.
+    For safety, embedded commas, tabs and newlines are turned
+    into spaces in the output.
     '''
     wantedList = [ h.strip() for h in grabHeaders.split(",") ]
     wantedList = [ h for h in wantedList if h != '' ]
@@ -831,7 +833,8 @@ def GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
             v = CellToString(oldCellRows[i][j])
             # print(f"i: {i} v: {repr(v)}")
             # sys.exit(0)
-            sys.stdout.write(v)
+            safeV = re.sub(r'[,\t\n]', ' ', v)
+            sys.stdout.write(safeV)
             if jWanted < nWanted-1: sys.stdout.write(',')
             else: sys.stdout.write('\n')
         nRows += 1
