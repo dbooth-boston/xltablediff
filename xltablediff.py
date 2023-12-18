@@ -1006,7 +1006,7 @@ def SelectTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
     # Delete from right to left, so that the column numbers
     # don't change as we are deleting columns.
     for j in range(len(oldHeaders)-1, -1, -1):
-        env = { 'h': oldHeaders[j] }
+        env = { 'h': oldHeaders[j], 'col': oldHeaderIndex }
         if colFilter and not(eval(colFilter, env)): 
             outSheet.delete_cols(j+1)
     ##### Write the result
@@ -1272,11 +1272,14 @@ in newFile.''')
     argParser.add_argument('--select',
         help='''Write out a copy of the given sheet, selecting 
             columns for which the SELECT expression is True-ish.  The SELECT 
-            expression should use "h" as the current column name.  For 
-            example, a SELECT expression of 
+            expression should use "h" as the current column name, and may
+            use "col[hh]" to determine the 0-based column number of an
+            column hh.  For example, a SELECT expression of 
             \'h in ["wanted1", "wanted2"]\' will select only columns 
             named "wanted1" and "wanted2".  A SELECT expression of
             \'h != "unWanted1"\' will select all columns *except* "unWanted1".
+            A SELECT expression of \'col[h] < col["EXTRAS"]\'
+            will select all columns before the column named "EXTRAS".
             The --filter option may also be used to filter rows.
             ''')
     argParser.add_argument('--filter',
