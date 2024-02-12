@@ -1312,6 +1312,9 @@ in newFile.''')
             Die(f"newFile.xlsx must not be specified when --grab option is used.")
         if args.out:
             Die(f"--out option cannot be used with --grab option.")
+    if (args.filter) and not(args.grab or args.select):
+        # Default to --select=True if --filter is used
+        args.select = "True"
     if (not args.newFile) and (not args.grab) and (not args.select) and (not args.rename):
         Die(f"newFile.xlsx must be specified.")
     if (not args.out) and (not args.grab):
