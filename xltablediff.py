@@ -130,6 +130,7 @@ import argparse
 import copy
 
 ##################### Globals #####################
+verbose = False
 quiet = False
 fillChange =    PatternFill("solid", fgColor="FFFFAA")
 fillChangeRow = PatternFill("solid", fgColor="FFFFDD")
@@ -575,8 +576,8 @@ def CompareBody(diffRows, diffHeaders, ignoreHeaders,
 
 ##################### Info #####################
 def Info(s):
-    global quiet
-    if not quiet: 
+    global verbose
+    if verbose: 
         sys.stderr.write(f"[INFO] {s}")
         if not s.endswith("\n"): sys.stderr.write(f"\n")
 
@@ -1288,6 +1289,8 @@ in newFile.''')
                     help='''List all keys (old and new), preceded by the key header''')
     argParser.add_argument('--changed', action='store_true',
                     help='''List changed keys, preceded by the key header''')
+    argParser.add_argument('-v', '--verbose', action='store_true',
+                    help='''Show info while processing''')
     argParser.add_argument('-q', '--quiet', action='store_true',
                     help='''No error message, but set exit code 0 for no diffs, 2 for diffs, 1 for error''')
     argParser.add_argument('--out',
@@ -1295,7 +1298,10 @@ in newFile.''')
     # Info(f"calling print_using....\n")
     args = argParser.parse_args()
     global quiet 
+    global verbose 
     quiet = args.quiet
+    verbose = args.verbose
+    if quiet: verbose = False
     if args.rename:
         if args.grab or args.select or args.merge or args.mergeAll \
                 or args.replace or args.replaceAll or args.oldAppend or args.newAppend:
