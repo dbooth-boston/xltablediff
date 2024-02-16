@@ -626,6 +626,7 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, jOldKey,
     # Warn(f"newHeaders: {repr(newHeaders)}")
     newHeaderIndex = { v: i for i, v in enumerate(newHeaders) }
     diffHeaderMarks, diffHeaders = CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex)
+    # Info(f"diffHeaders: {repr(diffHeaders)}")
     # nDiffHeaders does not include the marker column.
     # The total number of columns in diffRows will be nDiffHeaders+1.
     nDiffHeaders = len(diffHeaders)     
@@ -649,7 +650,7 @@ def CompareTables(oldRows, iOldHeaders, iOldTrailing, jOldKey,
         # No columns were added or deleted.
         iDiffBody = iDiffHeaders + 1    # Only one header row after all
         diffRow = [ '=' ]
-        diffRow.extend(oldHeaders)
+        diffRow.extend(diffHeaders)
         diffRows.append(diffRow)
     else:
         # At least one column was added or deleted.
