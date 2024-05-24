@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.8
+#!/usr/bin/env python3
 
 # Copyright 2022 by David Booth
 # License: Apache 2.0
@@ -333,7 +333,7 @@ def FindTable(wb, wantedTitle, key, file, maxColumns):
         withKey = ""
         if key: withKey = f" with key '{key}'"
         Die(f"Unable to find header row{withKey}\n"
-            + f" in file: '{file}'\n"
+            + f" in sheet '{title}' file: '{file}'\n"
             + f" This can be caused by duplicate column names\n"
             + f" or by having data in a column beyond the table.\n")
         pKeys = " ".join(sorted(map((lambda v: f"'{v}'"), allPossibleKeys)))
@@ -913,21 +913,21 @@ def OldAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
 def RenameTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
         renameColumns, outFile):
     ''' Rename columns in the given table, and write out the new
-    table.  renameColumns must be a list of 'NEW=OLD' strings, 
-    specifying the new and old column names.
+    table.  renameColumns must be a list of 'OLD=NEW' strings, 
+    specifying the old and new column names.
     '''
     # The strategy is to make a new worksheet having the resulting rows
-    # that we want, delete unwanted columns, and then write it out.
+    # that we want, rename the desired columns, and then write it out.
     oldCellRows = tuple(oldSheet.rows)
     oldHeaderCells = oldCellRows[iOldHeaders]   # Tuple
     nOldHeaders = len(oldHeaderCells)
     oldHeaders = [ CellToString(c) for c in oldHeaderCells ]
     oldHeaderIndex = { oldHeaders[i]: i for i in range(nOldHeaders) }
-    for newOld in renameColumns:
-        newOldList = [ h.strip() for h in newOld.split('=') ]
-        if len(newOldList) != 2: Die(f"Bad 'NEW=OLD' syntax in --rename option: '{newOld}'")
-        newHeader = newOldList[0]
-        oldHeader = newOldList[1]
+    for oldNew in renameColumns:
+        oldNewList = [ h.strip() for h in oldNew.split('=') ]
+        if len(oldNewList) != 2: Die(f"Bad 'OLD=NEW' syntax in --rename option: '{oldNew}'")
+        oldHeader = oldNewList[0]
+        newHeader = oldNewList[1]
         if oldHeader not in oldHeaderIndex:
             Die(f"Unknown column name: '{oldHeader}'")
         j = oldHeaderIndex[oldHeader]
@@ -1091,7 +1091,7 @@ def TrimSheet(sheet, maxColumns, filename):
     oldNRows = nRows
     if maxColumns and maxColumns < sheet.max_column:
         Info(f"File '{filename}' sheet '{sheet.title}': Deleting {sheet.max_column-maxColumns} columns due to '--maxColumns={maxColumns}'\n")
-        # Warn if non-empty columns are found in the next two
+        # For safety, die if non-empty columns are found in the next two
         # columns after maxColumns:
         for j in range(maxColumns, maxColumns+2):
             if j >= sheet.max_column: break
@@ -1099,8 +1099,8 @@ def TrimSheet(sheet, maxColumns, filename):
             # iUsed = next( (i for i in range(nRows) if str(Value(column[i].value)).strip()  != ''), -1)
             iUsed = FirstNonEmpty(column)
             if iUsed >= 0:
-                letter = openpyxl.utils.cell.get_column_letter(iUsed+1)
-                Warn(f"File '{filename}' sheet '{sheet.title}': Deleting column {j+1} ({letter}) with non-empty data\n")
+                letter = openpyxl.utils.cell.get_column_letter(j+1)
+                Die(f"Non-empty column {letter} ({j+1}) found with --maxColumns={maxColumns} \n  in sheet '{sheet.title}' file '{filename}'.\n  Either delete extra columns or set maxColumns higher.")
                 break
         sheet.delete_cols(maxColumns, sheet.max_column-maxColumns)
         # Get these again, in case they changed:
@@ -1269,7 +1269,7 @@ in newFile.''')
                     help='Comma-separated list of columns to be output as CSV with header row.')
     argParser.add_argument('--rename', action='append',
         help='''Rename a column.  The new and old column names are
-            specified as \'NEW=OLD\'.  This option may be repeated.
+            specified as \'OLD=NEW\'.  This option may be repeated.
             This option cannot be used with other options.''')
     argParser.add_argument('--select',
         help='''Write out a copy of the given sheet, selecting 
