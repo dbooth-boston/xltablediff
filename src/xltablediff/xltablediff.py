@@ -1729,6 +1729,5 @@ def check_diff(old, new):
 
 if __name__ == '__main__':
     main()
-    print('DOne!')
     exit(0)
 

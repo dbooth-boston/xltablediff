@@ -9,3 +9,6 @@ description = "Scripts to visualize the differences between spreadsheets"
 readme = "README.md"
 requires-python = ">=3.8"
 dependencies = ["openpyxl==3.1.3"]
+
+[project.scripts]
+xltablediff = "xltablediff.xltablediff:main"
