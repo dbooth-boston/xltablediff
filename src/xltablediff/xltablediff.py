@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # Copyright 2022 by David Booth
 # License: Apache 2.0
 # Repo: https://github.com/dbooth-boston/xltablediff
@@ -1731,5 +1729,6 @@ def check_diff(old, new):
 
 if __name__ == '__main__':
     main()
+    print('DOne!')
     exit(0)
 
