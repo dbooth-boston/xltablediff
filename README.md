@@ -1,22 +1,22 @@
-# xltablediff: Compare two Excel spreadsheet tables
+# xltablediff: Compare two Excel spreadsheet tables based on shared key columns
 
 ![test1diff-screenshot.png](test2diff-screenshot.png "Excel table differences")
 
 Yet another Excel (.xlsx) diff program, but it differs from other such programs in several important ways:
  - It compares two spreadsheet tables as though they are old and new versions of a **relational table**, with a shared key column.  The shared key column is used to determine what rows of the table were added, deleted or changed, regardless of their order in the table.
  - It also shows additions or deletions of entire columns, which helps avoid reporting spurious changes to individual rows.
- - Each table may be preceded or followed by rows that are not a part of the table.  
+ - Each table may be preceded by rows that are not a part of the table.  
  - Cell formats and formulas are ignored in comparing cell content: only the values matter.
  - It can merge columns of one table into another table, based on the row keys -- see the `--merge` option.  Or it can add columns of one table to another table, based on the row keys -- see the `--appendOld` and `--appendNew` options.  These functions can be helpful when different people have been separately updating different copies of a spreadsheet table, and you want to merge their changes back into the master table.
 
-Technically, a table is treated as a rectangular region of cells in a spreadsheet, beginning with a header row, which defines the names of the columns.  A current limitation is that the spreadsheet cannot have leading columns or non-empty trailing columns that are not a part of the table.  The location of the table -- i.e., the region of the sheet to be treated as a table -- is guessed by xltablediff, by looking for a row that looks like a header row.  (It would be nice to add an option to allow the specific region to be specified in an option, like `B12:f99`, but so far the author has not needed it.  Please submit a pull request if you are willing to contribute such a feature.)
+A table is treated as a rectangular region of cells in a spreadsheet, beginning with a header row, which defines the names of the columns.  A current limitation is that the spreadsheet cannot have leading columns or non-empty trailing columns that are not a part of the table.  The location of the table -- i.e., the region of the sheet to be treated as a table -- is guessed by xltablediff, by looking for a row that looks like a header row.  (It would be nice to add an option to allow the specific region to be specified in an option, like `B12:f99`, but so far the author has not needed it.  Please contact the author or submit a pull request if you are willing to contribute such a feature.)
 
 The old and new tables must have a key column in common, which is specified by the `--key K` option, where K is the name of the key column.  By default it must be the same in the old and new tables, but if it differs you can specify the old and new keys like this: `--key OLDKEY=NEWKEY`.  The key
-must uniquely identify the rows in the table, as in a relational table.  
+must uniquely identify the rows in the table, as in a relational table.  Composite keys are not currently supported.
 Added or deleted columns
 are detected by comparing the old and new column names, i.e., the column headers.
 
-Rows before and after the table are compared differently than rows of the table: they are compared as lines, more like with a conventional diff.
+Rows before the table are compared differently than rows of the table: they are compared as lines, more like with a conventional diff.
 
 ## Output
 
@@ -33,7 +33,7 @@ contains a marker indicating whether the row changed:
     c+  Row changed: this row shows the new content
 ```
 
-Deleted columns, rows or cells are highlighted with light red; and added
+Deleted columns, rows or cells are highlighted with light red.  Added
 columns, rows or cells are highlighted with light green.
 If a row in the table contains values that changed (from old to new),
 that row will be highlighted in light yellow and repeated:
