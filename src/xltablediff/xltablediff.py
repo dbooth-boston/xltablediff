@@ -1215,8 +1215,6 @@ def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, oldKey, igno
 ##################### main #####################
 def main():
     # Parse command line options:
-    global EXPLANATION
-    global EXAMPLES
     argParser = argparse.ArgumentParser(
         description='Compare tables in two .xlsx spreadsheets', 
         epilog=EXPLANATION+EXAMPLES,
