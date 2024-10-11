@@ -1,6 +1,6 @@
 # xltablediff: Compare two Excel spreadsheet tables based on shared key columns
 
-![test1diff-screenshot.png](test2diff-screenshot.png "Excel table differences")
+![src/xltablediff/test1diff-screenshot.png](test2diff-screenshot.png "Excel table differences")
 
 Yet another Excel (.xlsx) diff program, but it differs from other such programs in several important ways:
  - It compares two spreadsheet tables as though they are old and new versions of a **relational table**, with a shared key column.  The shared key column is used to determine what rows of the table were added, deleted or changed, regardless of their order in the table.
