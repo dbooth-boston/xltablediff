@@ -832,7 +832,7 @@ def GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
             j = oldHeaderIndex[h]
             v = CellToString(oldCellRows[i][j])
             # print(f"i: {i} v: {repr(v)}")
-            # sys.exit(0)
+            # return
             safeV = re.sub(r'[,\t\n]', ' ', v)
             sys.stdout.write(safeV)
             if jWanted < nWanted-1: sys.stdout.write(',')
@@ -1322,15 +1322,15 @@ def main(key=None,
     if rename:
         RenameTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
             rename, outFile)
-        sys.exit(0)
+        return
     if select:
         SelectTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
             select, outFile, filter)
-        sys.exit(0)
+        return
     if grab:
         GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
             grab, outFile, filter)
-        sys.exit(0)
+        return
     ###### new sheet:
     newWb = LoadWorkBook(newFile, data_only=False)
     newSheetTitles = [ s.title for s in newWb if (not newSheetTitle) or s.title == newSheetTitle ]
@@ -1386,15 +1386,15 @@ def main(key=None,
         MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
             newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey, outFile, 
             mergeHeaders, (replace or replaceAll))
-        sys.exit(0)
+        return
     if oldAppend:
         OldAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
             newSheet, iNewHeaders, iNewTrailing, jNewKey, outFile)
-        sys.exit(0)
+        return
     if newAppend:
         NewAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
             newSheet, iNewHeaders, iNewTrailing, jNewKey, outFile)
-        sys.exit(0)
+        return
 
     ignoreHeaders = ignore if ignore else []
     # command will be the command string to echo in the first row output.
@@ -1413,7 +1413,7 @@ def main(key=None,
     elif unionKeys:
         WriteChanged(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, newKey, True)
     WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, oldKey, ignoreHeaders, outFile)
-    if nChanges == 0: sys.exit(0)
+    if nChanges == 0: return
     else: sys.exit(2)
 
 ############################## WriteChanged ##################################
