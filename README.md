@@ -160,11 +160,11 @@ Diffs:
 ## Usage as a python module
 
 ### Install
-`pip install -U git+https://github.com/dbooth-boston/xltablediff.git`
+`pip install -U git+https://github.com/dbooth-boston/xltablediff.git@maria/python-proj`
 
 ### Import module
 ```
-import xltablediff
+from xltablediff import xltablediff
 
 xltablediff.main(key='ID', newFile='test1old.xlsx', oldFile='test1new.xlsx', out='test1diff.xlsx')
 ```
