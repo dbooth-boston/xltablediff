@@ -1413,8 +1413,6 @@ def main(key=None,
     elif unionKeys:
         WriteChanged(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, newKey, True)
     WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, oldKey, ignoreHeaders, outFile)
-    if nChanges == 0: return
-    else: sys.exit(2)
 
 ############################## WriteChanged ##################################
 def WriteChanged(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, newKey, unionKeys):
