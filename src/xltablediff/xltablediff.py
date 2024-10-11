@@ -1769,8 +1769,8 @@ in newFile.''')
          filter=args.filter,
          unionKeys=args.unionKeys,
          changed=args.changed,
-         v=args.v,
-         q=args.q,
+         v=args.verbose,
+         q=args.quiet,
          out=args.out
          )
     exit(0)
