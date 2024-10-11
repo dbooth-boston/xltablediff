@@ -120,19 +120,19 @@ optional arguments:
 
 ```
 # Diff test:
-  xltablediff.py  --key ID test1old.xlsx test1new.xlsx --out test1diff.xlsx
+  python xltablediff.py  --key ID test1old.xlsx test1new.xlsx --out test1diff.xlsx
 
 # Ignore test:
-  xltablediff.py  --key ID --ignore Color test1old.xlsx test1new.xlsx --out test1ignore.xlsx
+  python xltablediff.py  --key ID --ignore Color test1old.xlsx test1new.xlsx --out test1ignore.xlsx
 
 # Merge test:
-  xltablediff.py  --key ID --merge Color test1old.xlsx test1new.xlsx --out test1merge.xlsx
+  python xltablediff.py  --key ID --merge Color test1old.xlsx test1new.xlsx --out test1merge.xlsx
 
 # oldAppend test:
-  xltablediff.py  --key ID --oldAppend test1old.xlsx test1new.xlsx --out test1oldAppend.xlsx
+  python xltablediff.py  --key ID --oldAppend test1old.xlsx test1new.xlsx --out test1oldAppend.xlsx
 
 # newAppend test:
-  xltablediff.py  --key ID --newAppend test1old.xlsx test1new.xlsx --out test1newAppend.xlsx
+  python xltablediff.py  --key ID --newAppend test1old.xlsx test1new.xlsx --out test1newAppend.xlsx
 ```
 
 ## Example spreadsheets
@@ -156,4 +156,18 @@ New table:
 Diffs:
 
 ![test2diff-screenshot.png](test2diff-screenshot.png "Diffs")
+
+## Usage as a python module
+
+### Install
+`pip install -U git+https://github.com/dbooth-boston/xltablediff.git@maria/python-proj`
+
+### Import module
+```
+from xltablediff import xltablediff
+
+xltablediff.main(key='ID', newFile='test1old.xlsx', oldFile='test1new.xlsx', out='test1diff.xlsx')
+```
+
+
 

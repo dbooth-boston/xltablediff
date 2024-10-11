@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # Copyright 2022 by David Booth
 # License: Apache 2.0
 # Repo: https://github.com/dbooth-boston/xltablediff
@@ -269,8 +267,8 @@ def LoadWorkBook(file, data_only=True):
         s = str(e)
         # Info(f"Caught exception: '{s}'\n")
         if s.startswith('Value does not match pattern'):
-            Die(f"Unable to load file: '{file}'\n If a sheet uses a filter, try eliminating the filter.\n")
-        Die(f"{str(e)}")
+            raise Exception(f"Unable to load file: '{file}'\n If a sheet uses a filter, try eliminating the filter.\n")
+        raise Exception(f"{str(e)}")
     return wb
 
 ##################### FindTable #####################
@@ -327,12 +325,12 @@ def FindTable(wb, wantedTitle, key, file, maxColumns):
         if sheet:
             break
     if not sheet and wantedTitle:
-            Die(f"Sheet not found: '{wantedTitle}'\n"
+            raise Exception(f"Sheet not found: '{wantedTitle}'\n"
                 + f" in file: '{file}'\n")
     if iHeaders is None:
         withKey = ""
         if key: withKey = f" with key '{key}'"
-        Die(f"Unable to find header row{withKey}\n"
+        raise Exception(f"Unable to find header row{withKey}\n"
             + f" in sheet '{title}' file: '{file}'\n"
             + f" This can be caused by duplicate column names\n"
             + f" or by having data in a column beyond the table.\n")
@@ -344,12 +342,12 @@ def FindTable(wb, wantedTitle, key, file, maxColumns):
     originalKey = key
     if key: 
         if key not in rows[iHeaders]:
-            Die(f"Key not found in header row {iHeaders+1}: '{key}'\n"
+            raise Exception(f"Key not found in header row {iHeaders+1}: '{key}'\n"
                 + f" in file: '{file}'  sheet: '{sheet.title}\n")
         possibleKeys = [key]
         allPossibleKeys = set([key])
     elif not possibleKeys:
-        Die(f"No key found in header row {iHeaders+1}\n"
+        raise Exception(f"No key found in header row {iHeaders+1}\n"
             + f" in file: '{file}'  sheet: '{sheet.title}'\n")
     elif len(possibleKeys) == 1: key = possibleKeys[0]
     else:
@@ -419,11 +417,11 @@ def CompareHeaders(oldHeaders, oldHeaderIndex, newHeaders, newHeaderIndex):
     if '' in oldHeaders:
         iEmpty = next( (i for i in range(len(oldHeaders)) if oldHeaders[i] == ''), -1 )
         letter = openpyxl.utils.cell.get_column_letter(iEmpty+1)
-        Die(f"Empty header in column {letter} of old table\n")
+        raise Exception(f"Empty header in column {letter} of old table\n")
     if '' in newHeaders:
         iEmpty = next( (i for i in range(len(newHeaders)) if newHeaders[i] == ''), -1 )
         letter = openpyxl.utils.cell.get_column_letter(iEmpty+1)
-        Die(f"Empty header in column {letter} of new table\n")
+        raise Exception(f"Empty header in column {letter} of new table\n")
     assert(len(oldHeaders) == len(set(oldHeaders)))
     assert(len(newHeaders) == len(set(newHeaders)))
     # Build up the diffHeaders from the newHeaders plus any deleted oldHeaders
@@ -472,9 +470,9 @@ def CompareBody(diffRows, diffHeaders, ignoreHeaders,
     for i, v in enumerate(oldKeys):
         r = i+iOldHeaders+1 
         if v == '':
-            Die(f"Table in oldFile contains an empty key at row {r+1}\n")
+            raise Exception(f"Table in oldFile contains an empty key at row {r+1}\n")
         if v in oldKeyIndex:
-            Die(f"Table in oldFile contains a duplicate key on row {r+1}: '{v}'\n")
+            raise Exception(f"Table in oldFile contains a duplicate key on row {r+1}: '{v}'\n")
         oldKeyIndex[v] = r
     # sys.stderr.write(f"jNewKey: {jNewKey} iNewHeaders: {iNewHeaders} iNewTrailing: {iNewTrailing}\n")
     newKeys = [ newRows[i][jNewKey] for i in range(iNewHeaders+1, iNewTrailing) ]
@@ -487,7 +485,7 @@ def CompareBody(diffRows, diffHeaders, ignoreHeaders,
         if v == '':
             raise ValueError(f"[INTERNAL ERROR] Table in newFile contains an empty key at row {r+1}\n")
         if v in newKeyIndex:
-            Die(f"Table in newFile contains a duplicate key on row {r+1}: '{v}'\n")
+            raise Exception(f"Table in newFile contains a duplicate key on row {r+1}: '{v}'\n")
         newKeyIndex[v] = r
     # Make the diff list of rows.
     # diffRows will not include the header row, but each row in it
@@ -509,7 +507,7 @@ def CompareBody(diffRows, diffHeaders, ignoreHeaders,
     remainingHeaders = ignoreSet.difference(commonHeaders)
     if remainingHeaders:
         h = " ".join(sorted(remainingHeaders))
-        Die(f"Bad --ignore column name(s): {h}\n"
+        raise Exception(f"Bad --ignore column name(s): {h}\n"
             + f" Column headers specified with --ignore must exist in both old and new tables\n")
     compareHeaders = commonHeaders.difference(ignoreSet)
     # Now copy the newRows into diffRows, marking each diff row 
@@ -809,7 +807,7 @@ def GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
     wantedList = [ h for h in wantedList if h != '' ]
     nWanted = len(wantedList)
     if not nWanted:
-        Die(f"--grab option did not specify any column names")
+        raise Exception(f"--grab option did not specify any column names")
     # Get the old headers
     oldCellRows = tuple(oldSheet.rows)
     oldHeaderCells = oldCellRows[iOldHeaders]   # Tuple
@@ -830,11 +828,11 @@ def GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
         for jWanted in range(nWanted):
             h = wantedList[jWanted]
             if h not in oldHeaderIndex:
-                Die(f"Column '{h}' not found in old sheet '{oldSheet.title}'")
+                raise Exception(f"Column '{h}' not found in old sheet '{oldSheet.title}'")
             j = oldHeaderIndex[h]
             v = CellToString(oldCellRows[i][j])
             # print(f"i: {i} v: {repr(v)}")
-            # sys.exit(0)
+            # return
             safeV = re.sub(r'[,\t\n]', ' ', v)
             sys.stdout.write(safeV)
             if jWanted < nWanted-1: sys.stdout.write(',')
@@ -925,11 +923,11 @@ def RenameTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
     oldHeaderIndex = { oldHeaders[i]: i for i in range(nOldHeaders) }
     for oldNew in renameColumns:
         oldNewList = [ h.strip() for h in oldNew.split('=') ]
-        if len(oldNewList) != 2: Die(f"Bad 'OLD=NEW' syntax in --rename option: '{oldNew}'")
+        if len(oldNewList) != 2: raise Exception(f"Bad 'OLD=NEW' syntax in --rename option: '{oldNew}'")
         oldHeader = oldNewList[0]
         newHeader = oldNewList[1]
         if oldHeader not in oldHeaderIndex:
-            Die(f"Unknown column name: '{oldHeader}'")
+            raise Exception(f"Unknown column name: '{oldHeader}'")
         j = oldHeaderIndex[oldHeader]
         c = oldSheet.cell(iOldHeaders+1, j+1, newHeader)
     ##### Write the result
@@ -1035,9 +1033,9 @@ def MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
     for i in range(iNewHeaders+1, iNewTrailing):
         v = newRows[i][jNewKey]
         if v == '':
-            Die(f"Table in newFile contains an empty key at row {i+1}\n")
+            raise Exception(f"Table in newFile contains an empty key at row {i+1}\n")
         if v in newKeyIndex:
-            Die(f"Table in newFile contains a duplicate key on row {i+1}: '{v}'\n")
+            raise Exception(f"Table in newFile contains a duplicate key on row {i+1}: '{v}'\n")
         newKeyIndex[v] = i
     newHeaderIndex = { h: j for j, h in enumerate(newHeaders) }
     # Looping through columns first (instead of rows) because we can skip
@@ -1100,7 +1098,7 @@ def TrimSheet(sheet, maxColumns, filename):
             iUsed = FirstNonEmpty(column)
             if iUsed >= 0:
                 letter = openpyxl.utils.cell.get_column_letter(j+1)
-                Die(f"Non-empty column {letter} ({j+1}) found with --maxColumns={maxColumns} \n  in sheet '{sheet.title}' file '{filename}'.\n  Either delete extra columns or set maxColumns higher.")
+                raise Exception(f"Non-empty column {letter} ({j+1}) found with --maxColumns={maxColumns} \n  in sheet '{sheet.title}' file '{filename}'.\n  Either delete extra columns or set maxColumns higher.")
                 break
         sheet.delete_cols(maxColumns, sheet.max_column-maxColumns)
         # Get these again, in case they changed:
@@ -1123,7 +1121,7 @@ def TrimSheet(sheet, maxColumns, filename):
             nRows -= 1
         if nRows == 0: nColumns = 0
     except AttributeError as e:
-        Die(f"AttributeError {str(e)}\n" 
+        raise Exception(f"AttributeError {str(e)}\n"
             + f" at sheet '{sheet.title}' row {nRows}")
     try:
         # Delete empty trailing columns:
@@ -1142,7 +1140,7 @@ def TrimSheet(sheet, maxColumns, filename):
         if nRows != oldNRows or nColumns != oldNColumns:
             Info(f"File '{filename}' sheet '{sheet.title}': Trimmed {oldNRows-nRows} empty trailing rows and {oldNColumns-nColumns} columns\n")
     except AttributeError as e:
-        Die(f"AttributeError {str(e)}\n"
+        raise Exception(f"AttributeError {str(e)}\n"
             + f" at sheet '{sheet.title}' column {nColumns}")
     # Info(f"Copying header len: '{repr(len(newCellRows[iNewHeaders]))} nNewHeaders: '{repr(nNewHeaders)}'\n newCellValue Headers: {repr(newCellValues)}\n newHeaders: {repr(newHeaders)}\n")
 
@@ -1215,222 +1213,162 @@ def WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, oldKey, igno
     Info(f"Wrote: '{outFile}'\n")
 
 ##################### main #####################
-def main():
-    # Parse command line options:
-    global EXPLANATION
-    global EXAMPLES
-    argParser = argparse.ArgumentParser(
-        description='Compare tables in two .xlsx spreadsheets', 
-        epilog=EXPLANATION+EXAMPLES,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-    argParser.add_argument('--key',
-                    help='Specifies KEY as the name of the key column, i.e., its header.  If KEY is of the form "OLDKEY=NEWKEY" then OLDKEY and NEWKEY are the corresponding key columns of the old and new tables, respectively.')
-    argParser.add_argument('--oldSheet',
-                    help='Specifies the sheet in oldFile to be compared.  Default: the first sheet with a table with a KEY column.')
-    argParser.add_argument('--newSheet',
-                    help='Specifies the sheet in newFile to be compared.  Default: the first sheet with a table with a KEY column.')
-    argParser.add_argument('--sheet',
-                    help='Specifies the sheet to be compared, in both oldFile and newFile.  Default: the first sheet with a table with a KEY column.')
-    argParser.add_argument('--ignore', nargs=1, action='extend',
-                    help='Ignore the specified column when comparing old and new table rows.  This option may be repeated to ignore multiple columns.  The specified column must exist in both old and new tables.')
+def main(key=None,
+         oldSheet=None,
+         newSheet=None,
+         sheet=None,
+         ignore=None,
+         oldAppend=None,
+         newAppend=None,
+         merge=None,
+         mergeAll=None,
+         replace=None,
+         replaceAll=None,
+         maxColumns=None,
+         oldFile=None,
+         newFile=None,
+         grab=None,
+         rename=None,
+         select=None,
+         filter=None,
+         unionKeys=None,
+         changed=None,
+         v=None,
+         q=None,
+         out=None):
 
-    argParser.add_argument('--oldAppend', action='store_true',
-                    help='''Copy the values of oldFile sheet, appending columns of newFile, 
-keeping only the rows of oldFile.  Rows of newFile that do not exist in
-oldFile are discarded.  Leading and trailing rows of newFile (before
-and after the table) are also discarded.  The number of rows in the
-output file will be the same is in oldFile.''')
-
-    argParser.add_argument('--newAppend', action='store_true',
-                    help='''Copy the values of oldFile sheet, appending columns of newFile, 
-but forcing the resulting table body to have the same rows as in
-newFile, based on the keys in newFile.  Rows of newFile that do not
-exist in oldFile are inserted (with the key value from newFile), and
-rows of oldFile that do not exist in newFile are discarded.  Leading and
-trailing rows of newFile (before and after the table) are also discarded.
-The number of rows in the resulting table body will be the same is
-in newFile.''')
-
-    argParser.add_argument('--merge', nargs=1, action='extend',
-                    help='Output a copy of the old sheet, with values from the specifed MERGE column from the new table merged in.  Merging means that for any row in the old sheet having the same key in the new table, the MERGE column value is replaced by the value from the new table, even if that new value is empty.  Any row in the old sheet that does not have a corresponding key in the new table remains unchanged.  Any row in the new table that does not have a corresponding key in the old sheet is discarded.  This option may be repeated to merge more than one column.  The number of rows in the output file will be the same is in oldFile.')
-    argParser.add_argument('--mergeAll', action='store_true',
-                    help="Same as '--merge C' for all non-key columns C that are in both the old and new tables.")
-    argParser.add_argument('--replace', nargs=1, action='extend',
-                    help="Same as '--merge', except that all values of the specified column in oldTable are cleared before merging.")
-    argParser.add_argument('--replaceAll', action='store_true',
-                    help="Same as '--mergeAll' except that all non-key columns of newTable existing in oldTable are cleared in oldTable before merging.")
-    argParser.add_argument('--maxColumns', type=int,
-                    help='Delete all columns after column N, where N is an integer (origin 1).  0 means no limit.  Default: 100.')
-    argParser.add_argument('oldFile', metavar='oldFile.xlsx', type=str,
-                    help='Old spreadsheet (*.xlsx)')
-    argParser.add_argument('newFile', metavar='newFile.xlsx', type=str,
-                    help='New spreadsheet (*.xlsx)', nargs='?', default='')
-    argParser.add_argument('--grab',
-                    help='Comma-separated list of columns to be output as CSV with header row.')
-    argParser.add_argument('--rename', action='append',
-        help='''Rename a column.  The new and old column names are
-            specified as \'OLD=NEW\'.  This option may be repeated.
-            This option cannot be used with other options.''')
-    argParser.add_argument('--select',
-        help='''Write out a copy of the given sheet, selecting 
-            columns for which the SELECT expression is True-ish.  The SELECT 
-            expression should use "h" as the current column name, and may
-            use "col[hh]" to determine the 0-based column number of an
-            column hh.  For example, a SELECT expression of 
-            \'h in ["wanted1", "wanted2"]\' will select only columns 
-            named "wanted1" and "wanted2".  A SELECT expression of
-            \'h != "unWanted1"\' will select all columns *except* "unWanted1".
-            A SELECT expression of \'col[h] < col["EXTRAS"]\'
-            will select all columns before the column named "EXTRAS".
-            The --filter option may also be used to filter rows.
-            ''')
-    argParser.add_argument('--filter',
-                    help='Python expression.  If provided and true, only output rows (except the header row, which is always output) for which FILTER evaluates to true-ish.  In FILTER, column names can be used as python variables.  If a column name would not be a valid python variable, it can be accessed as v["my-bad-var"].  This option only works with --grab or --select.')
-    argParser.add_argument('--unionKeys', action='store_true',
-                    help='''List all keys (old and new), preceded by the key header''')
-    argParser.add_argument('--changed', action='store_true',
-                    help='''List changed keys, preceded by the key header''')
-    argParser.add_argument('-v', '--verbose', action='store_true',
-                    help='''Show info while processing''')
-    argParser.add_argument('-q', '--quiet', action='store_true',
-                    help='''No error message, but set exit code 0 for no diffs, 2 for diffs, 1 for error''')
-    argParser.add_argument('--out',
-                    help='Output file of differences.  This "option" is actually REQUIRED unless the --grab option is used.')
-    # Info(f"calling print_using....\n")
-    args = argParser.parse_args()
     global quiet 
     global verbose 
-    quiet = args.quiet
-    verbose = args.verbose
+    quiet = q
+    verbose = v
     if quiet: verbose = False
-    if args.rename:
-        if args.grab or args.select or args.merge or args.mergeAll \
-                or args.replace or args.replaceAll or args.oldAppend or args.newAppend:
-            Die(f"--rename cannot be used with other options.")
-        if args.newFile:
-            Die(f"newFile.xlsx must not be specified when --rename option is used.")
-    if args.select:
-        if args.grab:
-            Die(f"--select cannot be used with --grab option.")
-        if args.newFile:
-            Die(f"newFile.xlsx must not be specified when --select option is used.")
-    if args.grab:
-        if args.newFile:
-            Die(f"newFile.xlsx must not be specified when --grab option is used.")
-        if args.out:
-            Die(f"--out option cannot be used with --grab option.")
-    if (args.filter) and not(args.grab or args.select):
+    if rename:
+        if grab or select or merge or mergeAll \
+                or replace or replaceAll or oldAppend or newAppend:
+            raise Exception(f"--rename cannot be used with other options.")
+        if newFile:
+            raise Exception(f"newFile.xlsx must not be specified when --rename option is used.")
+    if select:
+        if grab:
+            raise Exception(f"--select cannot be used with --grab option.")
+        if newFile:
+            raise Exception(f"newFile.xlsx must not be specified when --select option is used.")
+    if grab:
+        if newFile:
+            raise Exception(f"newFile.xlsx must not be specified when --grab option is used.")
+        if out:
+            raise Exception(f"--out option cannot be used with --grab option.")
+    if (filter) and not(grab or select):
         # Default to --select=True if --filter is used
-        args.select = "True"
-    if (not args.newFile) and (not args.grab) and (not args.select) and (not args.rename):
-        Die(f"newFile.xlsx must be specified.")
-    if (not args.out) and (not args.grab):
-        Die(f"--out=outFile.xlsx option is REQUIRED.")
-    if args.sheet and args.oldSheet:
-        Die(f"Illegal combination of options: --sheet with --oldSheet")
-    if args.sheet and args.newSheet:
-        Die(f"Illegal combination of options: --sheet with --newSheet")
-    oldSheetTitle = args.sheet
-    newSheetTitle = args.sheet
-    if args.oldSheet:
-        oldSheetTitle = args.oldSheet
-    if args.newSheet:
-        newSheetTitle = args.newSheet
+        select = "True"
+    if (not newFile) and (not grab) and (not select) and (not rename):
+        raise Exception(f"newFile.xlsx must be specified.")
+    if (not out) and (not grab):
+        raise Exception(f"--out=outFile.xlsx option is REQUIRED.")
+    if sheet and oldSheet:
+        raise Exception(f"Illegal combination of options: --sheet with --oldSheet")
+    if sheet and newSheet:
+        raise Exception(f"Illegal combination of options: --sheet with --newSheet")
+    oldSheetTitle = sheet
+    newSheetTitle = sheet
+    if oldSheet:
+        oldSheetTitle = oldSheet
+    if newSheet:
+        newSheetTitle = newSheet
     oldKey = None
     newKey = None
-    if args.key:
-        oldNewKeys = [ k.strip() for k in args.key.split("=") ]
+    if key:
+        oldNewKeys = [ k.strip() for k in key.split("=") ]
         if len(oldNewKeys) > 2:
-            Die(f"Too many keys specified: '--key {args.key}'\n")
+            raise Exception(f"Too many keys specified: '--key {key}'\n")
         oldKey = oldNewKeys[0]
         newKey = oldNewKeys[0]
         if len(oldNewKeys) > 1:
             newKey = oldNewKeys[1]
         if oldKey == '' or newKey == '':
-            Die(f"Key must not be empty: '--key {args.key}'\n")
-    outFile = args.out
-    if (not outFile) and (not args.grab):
-        sys.stderr.write("[ERROR] Output filename must be specified: --out=outFile.xlsx\n")
-        sys.exit(1)
-    if outFile == args.oldFile or outFile == args.newFile:
-        Die(f"Output filename must differ from newFile and oldFile: {outFile}\n")
+            raise Exception(f"Key must not be empty: '--key {key}'\n")
+    outFile = out
+    if (not outFile) and (not grab):
+        raise Exception("[ERROR] Output filename must be specified: --out=outFile.xlsx\n")
+    if outFile == oldFile or outFile == newFile:
+        raise Exception(f"Output filename must differ from newFile and oldFile: {outFile}\n")
     maxColumns = -1
-    if args.maxColumns: maxColumns = args.maxColumns
+    if maxColumns: maxColumns = maxColumns
     if maxColumns == -1: maxColumns = 100
     # sys.stderr.write("args: \n" + repr(args) + "\n\n")
-    oldWb = LoadWorkBook(args.oldFile, data_only=False)
+    oldWb = LoadWorkBook(oldFile, data_only=False)
     ####### Determine sheets to compare
     oldSheetTitles = [ s.title for s in oldWb if (not oldSheetTitle) or s.title == oldSheetTitle ]
     if not oldSheetTitles:
-        Die(f"Sheet '{oldSheetTitle}' not found in oldFile: '{args.oldFile}'")
+        raise Exception(f"Sheet '{oldSheetTitle}' not found in oldFile: '{oldFile}'")
     # Default to all matching sheet titles:
     if len(oldSheetTitles) == 1: oldSheetTitle = oldSheetTitles[0]
     ####### old Sheet:
     # These will be rows of values-only:
-    (oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey) = FindTable(oldWb, oldSheetTitle, oldKey, args.oldFile, maxColumns)
+    (oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey) = FindTable(oldWb, oldSheetTitle, oldKey, oldFile, maxColumns)
     oldTitle = oldSheet.title
     if iOldHeaders is None:
-        Die(f"Could not find header row in sheet '{oldSheetTitle}' in oldFile: '{args.oldFile}'")
-    Info(f"In '{args.oldFile}' sheet '{oldTitle}' found table in rows {iOldHeaders+1}-{iOldTrailing} columns 1-{len(oldRows[0])}\n")
+        raise Exception(f"Could not find header row in sheet '{oldSheetTitle}' in oldFile: '{oldFile}'")
+    Info(f"In '{oldFile}' sheet '{oldTitle}' found table in rows {iOldHeaders+1}-{iOldTrailing} columns 1-{len(oldRows[0])}\n")
     # Disable the ability to compare trailing rows, because this was found
     # to be error prone: if the table contained a blank row (or key), the 
     # rest of the table would be treated as trailing rows instead of being
     # included in the table comparison.
     if iOldTrailing < len(oldRows):
-        Die(f"Trailing non-table rows found at row {iOldTrailing+1}\n"
-            + f" in sheet '{oldTitle}' in oldFile: '{args.oldFile}'"
+        raise Exception(f"Trailing non-table rows found at row {iOldTrailing+1}\n"
+            + f" in sheet '{oldTitle}' in oldFile: '{oldFile}'"
             + f" Trailing rows are now disallowed because they were\n"
             + f" found to be error prone.")
-    if args.rename:
+    if rename:
         RenameTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
-            args.rename, outFile)
-        sys.exit(0)
-    if args.select:
+            rename, outFile)
+        return
+    if select:
         SelectTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
-            args.select, outFile, args.filter)
-        sys.exit(0)
-    if args.grab:
+            select, outFile, filter)
+        return
+    if grab:
         GrabTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
-            args.grab, outFile, args.filter)
-        sys.exit(0)
+            grab, outFile, filter)
+        return
     ###### new sheet:
-    newWb = LoadWorkBook(args.newFile, data_only=False)
+    newWb = LoadWorkBook(newFile, data_only=False)
     newSheetTitles = [ s.title for s in newWb if (not newSheetTitle) or s.title == newSheetTitle ]
     if not newSheetTitles:
-        Die(f"Sheet '{newSheetTitle}' not found in newFile: '{args.newFile}'")
+        raise Exception(f"Sheet '{newSheetTitle}' not found in newFile: '{newFile}'")
     if oldSheetTitle and not newSheetTitle: newSheetTitle = newSheetTitles[0]
     # Default to all matching sheet titles:
     if len(newSheetTitles) == 1: newSheetTitle = newSheetTitles[0]
     if newSheetTitle and not oldSheetTitle: oldSheetTitle = oldSheetTitles[0]
-    (newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey) = FindTable(newWb, newSheetTitle, newKey, args.newFile, maxColumns)
+    (newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey) = FindTable(newWb, newSheetTitle, newKey, newFile, maxColumns)
     newTitle = newSheet.title
     if iNewHeaders is None:
-        Die(f"Could not find header row in sheet '{newTitle}' in newFile: '{args.newFile}'")
+        raise Exception(f"Could not find header row in sheet '{newTitle}' in newFile: '{newFile}'")
     # Disable the ability to compare trailing rows, because it is error prone.
     if iNewTrailing < len(newRows):
-        Die(f"Trailing non-table rows found at row {iNewTrailing+1}\n"
-            + f" in sheet '{newTitle}' in newFile: '{args.newFile}'"
+        raise Exception(f"Trailing non-table rows found at row {iNewTrailing+1}\n"
+            + f" in sheet '{newTitle}' in newFile: '{newFile}'"
             + f" Trailing rows are now disallowed because they were\n"
             + f" found to be error prone.")
-    Info(f"In '{args.newFile}' sheet '{newTitle}' found table in rows {iNewHeaders+1}-{iNewTrailing} columns 1-{len(newRows[0])}\n")
-    if args.oldAppend and (args.merge or args.mergeAll):
-        Die(f"Options --oldAppend and --merge cannot be used together.\n")
-    if args.newAppend and (args.merge or args.mergeAll):
-        Die(f"Options --newAppend and --merge cannot be used together.\n")
-    if args.newAppend and args.oldAppend:
-        Die(f"Options --newAppend and --oldAppend cannot be used together.\n")
-    if args.mergeAll or args.merge or args.replaceAll or args.replace:
-        if args.replaceAll and args.replace:
-            Die(f"Options --replaceAll and --replace cannot be used together\n")
-        if args.mergeAll and args.merge:
-            Die(f"Options --mergeAll and --merge cannot be used together\n")
-        if (args.mergeAll or args.merge) and (args.replaceAll or args.replace):
-            Die(f"Options --merge/--mergeAll and --replace/--replaceAll cannot be used together\n")
-        # sys.stderr.write(f"args.merge: {repr(args.merge)}\n")
+    Info(f"In '{newFile}' sheet '{newTitle}' found table in rows {iNewHeaders+1}-{iNewTrailing} columns 1-{len(newRows[0])}\n")
+    if oldAppend and (merge or mergeAll):
+        raise Exception(f"Options --oldAppend and --merge cannot be used together.\n")
+    if newAppend and (merge or mergeAll):
+        raise Exception(f"Options --newAppend and --merge cannot be used together.\n")
+    if newAppend and oldAppend:
+        raise Exception(f"Options --newAppend and --oldAppend cannot be used together.\n")
+    if mergeAll or merge or replaceAll or replace:
+        if replaceAll and replace:
+            raise Exception(f"Options --replaceAll and --replace cannot be used together\n")
+        if mergeAll and merge:
+            raise Exception(f"Options --mergeAll and --merge cannot be used together\n")
+        if (mergeAll or merge) and (replaceAll or replace):
+            raise Exception(f"Options --merge/--mergeAll and --replace/--replaceAll cannot be used together\n")
+        # sys.stderr.write(f"merge: {repr(merge)}\n")
         oldHeadersSet = set(oldRows[iOldHeaders])
         newHeadersSet = set(newRows[iNewHeaders])
-        mergeHeaders = set(args.merge or args.replace or [])
-        if args.mergeAll or args.replaceAll:
+        mergeHeaders = set(merge or replace or [])
+        if mergeAll or replaceAll:
             oldNonKeys = oldHeadersSet.difference(set([oldKey]))
             newNonKeys = newHeadersSet.difference(set([newKey]))
             mergeHeaders = oldNonKeys.intersection(newNonKeys)
@@ -1438,27 +1376,27 @@ in newFile.''')
             for h in sorted(mergeHeaders):
                 # sys.stderr.write(f"h: {repr(h)}\n")
                 if h == oldKey or h == newKey:
-                    Die(f"Key columns cannot be merged: --merge={'h'}\n")
+                    raise Exception(f"Key columns cannot be merged: --merge={'h'}\n")
                 if (h not in oldHeadersSet):
-                    Die(f"Column specified in --merge='{h}' does not exist in old table.\n")
+                    raise Exception(f"Column specified in --merge='{h}' does not exist in old table.\n")
                 if (h not in newHeadersSet):
-                    Die(f"Column specified in --merge='{h}' does not exist in new table.\n")
+                    raise Exception(f"Column specified in --merge='{h}' does not exist in new table.\n")
                 mergeHeaders.add(h)
         # Merge or replace columns
         MergeTable(oldWb, oldSheet, oldRows, iOldHeaders, iOldTrailing, jOldKey,
             newSheet, newRows, iNewHeaders, iNewTrailing, jNewKey, outFile, 
-            mergeHeaders, (args.replace or args.replaceAll))
-        sys.exit(0)
-    if args.oldAppend:
+            mergeHeaders, (replace or replaceAll))
+        return
+    if oldAppend:
         OldAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
             newSheet, iNewHeaders, iNewTrailing, jNewKey, outFile)
-        sys.exit(0)
-    if args.newAppend:
+        return
+    if newAppend:
         NewAppendTable(oldWb, oldSheet, iOldHeaders, iOldTrailing, jOldKey,
             newSheet, iNewHeaders, iNewTrailing, jNewKey, outFile)
-        sys.exit(0)
+        return
 
-    ignoreHeaders = args.ignore if args.ignore else []
+    ignoreHeaders = ignore if ignore else []
     # command will be the command string to echo in the first row output.
     command = ''
     argv = sys.argv.copy()
@@ -1469,14 +1407,12 @@ in newFile.''')
     Info(f"{nChanges} total differences found")
     oldKey = oldRows[iOldHeaders][jOldKey]
     newKey = newRows[iNewHeaders][jNewKey]
-    if args.changed:
+    if changed:
 
         WriteChanged(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, newKey, False)
-    elif args.unionKeys:
+    elif unionKeys:
         WriteChanged(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, newKey, True)
     WriteDiffFile(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, oldKey, ignoreHeaders, outFile)
-    if nChanges == 0: sys.exit(0)
-    else: sys.exit(2)
 
 ############################## WriteChanged ##################################
 def WriteChanged(diffRows, iDiffHeaders, iDiffBody, iDiffTrailing, newKey, unionKeys):
@@ -1730,6 +1666,109 @@ def check_diff(old, new):
 ############################################################################
 
 if __name__ == '__main__':
-    main()
+    # Parse command line options:
+    argParser = argparse.ArgumentParser(
+        description='Compare tables in two .xlsx spreadsheets',
+        epilog=EXPLANATION+EXAMPLES,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    argParser.add_argument('--key',
+                    help='Specifies KEY as the name of the key column, i.e., its header.  If KEY is of the form "OLDKEY=NEWKEY" then OLDKEY and NEWKEY are the corresponding key columns of the old and new tables, respectively.')
+    argParser.add_argument('--oldSheet',
+                    help='Specifies the sheet in oldFile to be compared.  Default: the first sheet with a table with a KEY column.')
+    argParser.add_argument('--newSheet',
+                    help='Specifies the sheet in newFile to be compared.  Default: the first sheet with a table with a KEY column.')
+    argParser.add_argument('--sheet',
+                    help='Specifies the sheet to be compared, in both oldFile and newFile.  Default: the first sheet with a table with a KEY column.')
+    argParser.add_argument('--ignore', nargs=1, action='extend',
+                    help='Ignore the specified column when comparing old and new table rows.  This option may be repeated to ignore multiple columns.  The specified column must exist in both old and new tables.')
+
+    argParser.add_argument('--oldAppend', action='store_true',
+                    help='''Copy the values of oldFile sheet, appending columns of newFile,
+keeping only the rows of oldFile.  Rows of newFile that do not exist in
+oldFile are discarded.  Leading and trailing rows of newFile (before
+and after the table) are also discarded.  The number of rows in the
+output file will be the same is in oldFile.''')
+
+    argParser.add_argument('--newAppend', action='store_true',
+                    help='''Copy the values of oldFile sheet, appending columns of newFile,
+but forcing the resulting table body to have the same rows as in
+newFile, based on the keys in newFile.  Rows of newFile that do not
+exist in oldFile are inserted (with the key value from newFile), and
+rows of oldFile that do not exist in newFile are discarded.  Leading and
+trailing rows of newFile (before and after the table) are also discarded.
+The number of rows in the resulting table body will be the same is
+in newFile.''')
+
+    argParser.add_argument('--merge', nargs=1, action='extend',
+                    help='Output a copy of the old sheet, with values from the specifed MERGE column from the new table merged in.  Merging means that for any row in the old sheet having the same key in the new table, the MERGE column value is replaced by the value from the new table, even if that new value is empty.  Any row in the old sheet that does not have a corresponding key in the new table remains unchanged.  Any row in the new table that does not have a corresponding key in the old sheet is discarded.  This option may be repeated to merge more than one column.  The number of rows in the output file will be the same is in oldFile.')
+    argParser.add_argument('--mergeAll', action='store_true',
+                    help="Same as '--merge C' for all non-key columns C that are in both the old and new tables.")
+    argParser.add_argument('--replace', nargs=1, action='extend',
+                    help="Same as '--merge', except that all values of the specified column in oldTable are cleared before merging.")
+    argParser.add_argument('--replaceAll', action='store_true',
+                    help="Same as '--mergeAll' except that all non-key columns of newTable existing in oldTable are cleared in oldTable before merging.")
+    argParser.add_argument('--maxColumns', type=int,
+                    help='Delete all columns after column N, where N is an integer (origin 1).  0 means no limit.  Default: 100.')
+    argParser.add_argument('oldFile', metavar='oldFile.xlsx', type=str,
+                    help='Old spreadsheet (*.xlsx)')
+    argParser.add_argument('newFile', metavar='newFile.xlsx', type=str,
+                    help='New spreadsheet (*.xlsx)', nargs='?', default='')
+    argParser.add_argument('--grab',
+                    help='Comma-separated list of columns to be output as CSV with header row.')
+    argParser.add_argument('--rename', action='append',
+        help='''Rename a column.  The new and old column names are
+            specified as \'OLD=NEW\'.  This option may be repeated.
+            This option cannot be used with other options.''')
+    argParser.add_argument('--select',
+        help='''Write out a copy of the given sheet, selecting
+            columns for which the SELECT expression is True-ish.  The SELECT
+            expression should use "h" as the current column name, and may
+            use "col[hh]" to determine the 0-based column number of an
+            column hh.  For example, a SELECT expression of
+            \'h in ["wanted1", "wanted2"]\' will select only columns
+            named "wanted1" and "wanted2".  A SELECT expression of
+            \'h != "unWanted1"\' will select all columns *except* "unWanted1".
+            A SELECT expression of \'col[h] < col["EXTRAS"]\'
+            will select all columns before the column named "EXTRAS".
+            The --filter option may also be used to filter rows.
+            ''')
+    argParser.add_argument('--filter',
+                    help='Python expression.  If provided and true, only output rows (except the header row, which is always output) for which FILTER evaluates to true-ish.  In FILTER, column names can be used as python variables.  If a column name would not be a valid python variable, it can be accessed as v["my-bad-var"].  This option only works with --grab or --select.')
+    argParser.add_argument('--unionKeys', action='store_true',
+                    help='''List all keys (old and new), preceded by the key header''')
+    argParser.add_argument('--changed', action='store_true',
+                    help='''List changed keys, preceded by the key header''')
+    argParser.add_argument('-v', '--verbose', action='store_true',
+                    help='''Show info while processing''')
+    argParser.add_argument('-q', '--quiet', action='store_true',
+                    help='''No error message, but set exit code 0 for no diffs, 2 for diffs, 1 for error''')
+    argParser.add_argument('--out',
+                    help='Output file of differences.  This "option" is actually REQUIRED unless the --grab option is used.')
+    # Info(f"calling print_using....\n")
+    args = argParser.parse_args()
+    main(key=args.key,
+         oldSheet=args.oldSheet,
+         newSheet=args.newSheet,
+         sheet=args.sheet,
+         ignore=args.ignore,
+         oldAppend=args.oldAppend,
+         newAppend=args.newAppend,
+         merge=args.merge,
+         mergeAll=args.mergeAll,
+         replace=args.replace,
+         replaceAll=args.replaceAll,
+         maxColumns=args.maxColumns,
+         oldFile=args.oldFile,
+         newFile=args.newFile,
+         grab=args.grab,
+         rename=args.rename,
+         select=args.select,
+         filter=args.filter,
+         unionKeys=args.unionKeys,
+         changed=args.changed,
+         v=args.verbose,
+         q=args.quiet,
+         out=args.out
+         )
     exit(0)
 
