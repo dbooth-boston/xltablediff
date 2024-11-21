@@ -1292,9 +1292,8 @@ def main(key=None,
         raise Exception("[ERROR] Output filename must be specified: --out=outFile.xlsx\n")
     if outFile == oldFile or outFile == newFile:
         raise Exception(f"Output filename must differ from newFile and oldFile: {outFile}\n")
-    maxColumns = -1
-    if maxColumns: maxColumns = maxColumns
-    if maxColumns == -1: maxColumns = 100
+    if maxColumns == -1 or not maxColumns:
+        maxColumns = 100
     # sys.stderr.write("args: \n" + repr(args) + "\n\n")
     oldWb = LoadWorkBook(oldFile, data_only=False)
     ####### Determine sheets to compare
